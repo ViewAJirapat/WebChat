@@ -1,0 +1,207 @@
+# ChatBook harness config. 04_AgentSwarm is never modified; run every command as
+#   uv run --project E:/Playground_Projects/04_AgentSwarm swarm \
+#     -c E:/Playground_Projects/05_ChatBook/harness/swarm.toml -t <target> <cmd>
+#
+# NEVER run `validate` or `-e oracle` on target "chatbook": integrate would pick the oracle
+# branches (run ids sort by engine name). Validate only on "chatbook-oracle".
+
+[defaults]
+target = "chatbook"
+engine = "local-14b-arch"
+max_iterations = 4
+agent_timeout = 900
+verify_timeout = 300
+feedback_chars = 3000          # 8k-context model: keep retries small
+acceptance_feedback = "full"
+baseline_check = true
+worktrees_dir = ".worktrees"   # harness/.worktrees/<target>/<run-id>
+runs_dir = "runs"              # harness/runs/<run-id>
+
+# ---------------------------------------------------------------------------
+[targets.chatbook]
+repo = "../chatbook"
+base = "main"
+tasks = "tasks"
+rules_file = "AGENTS.md"
+pythonpath = ["src"]
+import_check = "chatbook"
+sandbox = "none"               # gates need node on the host; the docker image has none
+verify = [
+  ["{python}", "-m", "ruff", "check", "."],
+  ["{python}", "-m", "ruff", "format", "--check", "."],
+  ["{python}", "-m", "mypy", "src"],
+  ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+  ["{python}", "tools/check_extra.py"],
+]
+autofix = [
+  ["{python}", "-m", "ruff", "check", "--fix", "--exit-zero", "--quiet", "."],
+  ["{python}", "-m", "ruff", "format", "--quiet", "."],
+]
+protected = [
+  "tests/**", "conftest.py", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini",
+  "pytest.ini", "mypy.ini", ".mypy.ini", "ruff.toml", ".ruff.toml", "sitecustomize.py",
+  "usercustomize.py", "AGENTS.md", "CLAUDE.md", ".claude", ".git*", ".aider*",
+  "package.json", "tools/**", "docs/**", "README.md",
+  "src/chatbook/*.py", "src/chatbook/py.typed", "src/chatbook/app/**",
+  "src/chatbook/__main__/**", "src/chatbook/testing/**", "src/chatbook/core/**",
+  "src/chatbook/features/__init__.py",
+]
+context_files = []             # each task lists its own read-only references in `files`
+forbidden_added = [
+  '#\s*type:\s*ignore',
+  '#\s*noqa',
+  '#\s*pragma:\s*no\s*cover',
+  'pytest\.(mark\.)?(skip|xfail|importorskip)',
+  'unittest\.skip',
+  'collect_ignore',
+  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+]
+
+[targets.chatbook.architecture]
+root = "src"
+packages = ["chatbook"]
+independent = ["chatbook.features.*"]
+
+[[targets.chatbook.architecture.forbid]]
+from = "chatbook.core.**"
+to = ["chatbook.features.**", "chatbook.app", "chatbook.__main__", "chatbook.testing"]
+fix = "core is the stable base: it must not know the features, the app or the test kit."
+
+[[targets.chatbook.architecture.forbid]]
+from = "chatbook.features.**"
+to = "chatbook.**"
+allow = ["chatbook.core.api", "chatbook.features.**"]
+fix = "Import only chatbook.core.api (see docs/api/*.md) and modules in your own feature folder."
+
+[[targets.chatbook.architecture.forbid]]
+from = "chatbook.features.**"
+to = ["sqlite3.**", "time", "datetime.**", "os.**", "sys", "subprocess", "socket",
+      "threading", "multiprocessing.**", "asyncio.**", "importlib.**", "urllib.**",
+      "http.**", "wsgiref.**", "shutil", "pathlib", "pickle", "random", "secrets", "hashlib"]
+fix = "Use request.db, request.now and the chatbook.core.api helpers instead."
+
+[[targets.chatbook.architecture.forbid]]
+from = "chatbook.testing"
+to = "chatbook.features.**"
+fix = "The test kit drives features through the app, never by import."
+
+# ---------------------------------------------------------------------------
+# Identical except `repo`: a throwaway clone used ONLY for validate and dry-run integrate.
+# TOML has no anchors: keep the two blocks identical and diff them after every edit.
+# The clone (git clone ../chatbook ../chatbook-oracle) need not exist to load this file;
+# only commands on target chatbook-oracle need it.
+[targets.chatbook-oracle]
+repo = "../chatbook-oracle"
+base = "main"
+tasks = "tasks"
+rules_file = "AGENTS.md"
+pythonpath = ["src"]
+import_check = "chatbook"
+sandbox = "none"               # gates need node on the host; the docker image has none
+verify = [
+  ["{python}", "-m", "ruff", "check", "."],
+  ["{python}", "-m", "ruff", "format", "--check", "."],
+  ["{python}", "-m", "mypy", "src"],
+  ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+  ["{python}", "tools/check_extra.py"],
+]
+autofix = [
+  ["{python}", "-m", "ruff", "check", "--fix", "--exit-zero", "--quiet", "."],
+  ["{python}", "-m", "ruff", "format", "--quiet", "."],
+]
+protected = [
+  "tests/**", "conftest.py", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini",
+  "pytest.ini", "mypy.ini", ".mypy.ini", "ruff.toml", ".ruff.toml", "sitecustomize.py",
+  "usercustomize.py", "AGENTS.md", "CLAUDE.md", ".claude", ".git*", ".aider*",
+  "package.json", "tools/**", "docs/**", "README.md",
+  "src/chatbook/*.py", "src/chatbook/py.typed", "src/chatbook/app/**",
+  "src/chatbook/__main__/**", "src/chatbook/testing/**", "src/chatbook/core/**",
+  "src/chatbook/features/__init__.py",
+]
+context_files = []             # each task lists its own read-only references in `files`
+forbidden_added = [
+  '#\s*type:\s*ignore',
+  '#\s*noqa',
+  '#\s*pragma:\s*no\s*cover',
+  'pytest\.(mark\.)?(skip|xfail|importorskip)',
+  'unittest\.skip',
+  'collect_ignore',
+  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+]
+
+[targets.chatbook-oracle.architecture]
+root = "src"
+packages = ["chatbook"]
+independent = ["chatbook.features.*"]
+
+[[targets.chatbook-oracle.architecture.forbid]]
+from = "chatbook.core.**"
+to = ["chatbook.features.**", "chatbook.app", "chatbook.__main__", "chatbook.testing"]
+fix = "core is the stable base: it must not know the features, the app or the test kit."
+
+[[targets.chatbook-oracle.architecture.forbid]]
+from = "chatbook.features.**"
+to = "chatbook.**"
+allow = ["chatbook.core.api", "chatbook.features.**"]
+fix = "Import only chatbook.core.api (see docs/api/*.md) and modules in your own feature folder."
+
+[[targets.chatbook-oracle.architecture.forbid]]
+from = "chatbook.features.**"
+to = ["sqlite3.**", "time", "datetime.**", "os.**", "sys", "subprocess", "socket",
+      "threading", "multiprocessing.**", "asyncio.**", "importlib.**", "urllib.**",
+      "http.**", "wsgiref.**", "shutil", "pathlib", "pickle", "random", "secrets", "hashlib"]
+fix = "Use request.db, request.now and the chatbook.core.api helpers instead."
+
+[[targets.chatbook-oracle.architecture.forbid]]
+from = "chatbook.testing"
+to = "chatbook.features.**"
+fix = "The test kit drives features through the app, never by import."
+
+# ---------------------------------------------------------------------------
+[engines.local-14b-arch]           # default worker: qwen2.5-coder:14b, architect mode
+kind = "aider"
+model = "ollama_chat/qwen2.5-coder:14b"
+env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+extra_args = ["--map-tokens", "0", "--architect"]
+
+[engines.local-14b-arch-map]       # experiment: same with a small repo map
+kind = "aider"
+model = "ollama_chat/qwen2.5-coder:14b"
+env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+extra_args = ["--map-tokens", "512", "--architect"]
+
+[engines.local-14b]                # fallback: one pass, whole-file edits
+kind = "aider"
+model = "ollama_chat/qwen2.5-coder:14b"
+env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+extra_args = ["--map-tokens", "0"]
+
+[engines.local-7b-arch]            # fallback: 16k context (num_ctx) for prompts that overflow
+kind = "aider"
+model = "ollama_chat/qwen2.5-coder:7b"
+env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+extra_args = ["--map-tokens", "1024", "--architect"]
+
+[engines.local-7b]
+kind = "aider"
+model = "ollama_chat/qwen2.5-coder:7b"
+env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+extra_args = ["--map-tokens", "1024"]
+
+# Only if the owner pulls qwen3-coder:30b (18 GB download; doubtful with 16 GB RAM):
+# [engines.local-30b-arch]
+# kind = "aider"
+# model = "ollama_chat/qwen3-coder:30b"
+# env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
+# model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
+# extra_args = ["--map-tokens", "1024", "--architect"]
+
+[engines.oracle]
+kind = "oracle"
