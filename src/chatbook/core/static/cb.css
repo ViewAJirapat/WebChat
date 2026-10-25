@@ -1,0 +1,562 @@
+/* ChatBook frame styles (DESIGN.md 3.13). Every class named in docs/ui.md is defined here:
+   stack, row, item, unread, card, muted, badge, messages, msg, mine, danger, narrow; plus
+   avatar and user-link (CB.avatar, CB.userLink). No inline styles anywhere (CSP). */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f0f2f5;
+  color: #1c1e21;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+h3 {
+  font-size: 17px;
+}
+
+p {
+  margin: 0;
+}
+
+small {
+  font-size: 12px;
+}
+
+a {
+  color: #1877f2;
+}
+
+:focus-visible {
+  outline: 2px solid #1877f2;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ top bar */
+
+#cb-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  background: #1877f2;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+#cb-header:empty {
+  display: none;
+}
+
+#cb-header :focus-visible {
+  outline-color: #fff;
+}
+
+#cb-header .logo {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  text-decoration: none;
+}
+
+#cb-header form {
+  flex: 1 1 160px;
+  max-width: 260px;
+  margin: 0;
+}
+
+#cb-header input[type="search"] {
+  width: 100%;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: #fff;
+  color: #1c1e21;
+}
+
+#cb-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.nav-link,
+.nav-me {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link:hover,
+.nav-me:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nav-link[aria-current="page"] {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.nav-me {
+  margin-left: auto;
+}
+
+#cb-header .nav-logout {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: transparent;
+  color: #fff;
+}
+
+#cb-header .nav-logout:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ------------------------------------------------------------------ page */
+
+#cb-main {
+  max-width: 760px;
+  margin: 16px auto;
+  padding: 0 16px 32px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.row > h2,
+.row > h3 {
+  margin-right: auto;
+}
+
+.card {
+  padding: 16px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  overflow-wrap: anywhere;
+}
+
+.card > * + * {
+  margin-top: 10px;
+}
+
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  overflow-wrap: anywhere;
+}
+
+.item:hover {
+  background: #f7f8fa;
+}
+
+.item[role="button"] {
+  cursor: pointer;
+}
+
+.item > div {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.item > button:first-of-type {
+  margin-left: auto;
+}
+
+.item > .badge {
+  margin-left: auto;
+}
+
+.unread,
+.item.unread {
+  font-weight: 700;
+}
+
+.muted {
+  color: #65676b;
+}
+
+.narrow {
+  width: 100%;
+  max-width: 420px;
+  margin: 24px auto 0;
+}
+
+.badge {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e41e3f;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #1877f2;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.avatar[data-color="1"] {
+  background: #42b72a;
+}
+
+.avatar[data-color="2"] {
+  background: #e41e3f;
+}
+
+.avatar[data-color="3"] {
+  background: #b7791f;
+}
+
+.avatar[data-color="4"] {
+  background: #8a3ffc;
+}
+
+.avatar[data-color="5"] {
+  background: #0f8f8c;
+}
+
+.avatar[data-color="6"] {
+  background: #d4580a;
+}
+
+.avatar[data-color="7"] {
+  background: #5f6b7a;
+}
+
+.user-link {
+  color: #050505;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.user-link:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ chat */
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.msg {
+  align-self: flex-start;
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: #e4e6eb;
+  color: #050505;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.msg.mine {
+  align-self: flex-end;
+  background: #1877f2;
+  color: #fff;
+}
+
+.msg .avatar {
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  font-size: 11px;
+}
+
+.msg small {
+  margin-left: 4px;
+}
+
+.msg.mine .muted,
+.msg.mine .user-link {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ------------------------------------------------------------------ buttons and forms */
+
+button {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #e4e6eb;
+  color: #050505;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #d8dadf;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button[type="submit"] {
+  background: #1877f2;
+  color: #fff;
+}
+
+button[type="submit"]:hover:not(:disabled) {
+  background: #166fe5;
+}
+
+.danger,
+button.danger {
+  background: #e41e3f;
+  color: #fff;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #c8102e;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #ccd0d5;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+#cb-main form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+#cb-main .card form {
+  padding: 0;
+  box-shadow: none;
+}
+
+#cb-main form > button[type="submit"] {
+  align-self: flex-start;
+}
+
+#cb-main form[data-inline] {
+  flex-direction: row;
+  align-items: center;
+}
+
+#cb-main form[data-inline] > label {
+  flex: 1 1 auto;
+}
+
+#cb-main form[data-inline] > button[type="submit"] {
+  align-self: auto;
+}
+
+/* the single field of an inline form keeps its label for screen readers only */
+#cb-main form[data-inline] > label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+form label > span,
+fieldset > legend {
+  color: #65676b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px 10px;
+  border: 1px solid #ccd0d5;
+  border-radius: 6px;
+}
+
+fieldset label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+fieldset label > span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+/* ------------------------------------------------------------------ toasts */
+
+#cb-toasts {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #303338;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ small screens */
+
+@media (max-width: 600px) {
+  #cb-header {
+    padding: 6px 8px;
+  }
+
+  #cb-header .logo {
+    font-size: 21px;
+  }
+
+  #cb-header form {
+    flex-basis: 100%;
+    max-width: none;
+    order: 3;
+  }
+
+  #cb-header nav {
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+    order: 4;
+    overflow-x: auto;
+  }
+
+  #cb-main {
+    margin: 8px auto;
+    padding: 0 8px 24px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .msg {
+    max-width: 90%;
+  }
+
+  .narrow {
+    margin-top: 8px;
+  }
+}

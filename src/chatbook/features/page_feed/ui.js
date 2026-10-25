@@ -1,0 +1,35 @@
+// page_feed: posts by you and your friends.
+// CONTRACT (keep this comment; implement exactly this):
+// CB.page('feed', {title: 'Feed', nav: 'Feed', order: 40, poll: 15000, load, render})
+// load(params): return await CB.api('GET', '/api/feed' + CB.qs({limit: Number(params.limit || 20)}))
+// render(d, params) -> CB.el('div', {class: 'stack'},
+//   CB.form({fields: [{name: 'body', label: 'What is on your mind?', type: 'textarea'}],
+//            submit: 'Post', reset: true,
+//            onsubmit: async (v) => {
+//              const text = v.body.trim();
+//              if (text === '') return;
+//              await CB.api('POST', '/api/posts', {body: text});
+//              CB.refresh(); }}),
+//   d.posts.length ? d.posts.map(card) : CB.el('p', {class: 'muted'}, 'No posts yet'),
+//   d.has_more ? CB.el('button', {onclick: () => CB.go('feed',
+//       {limit: Number(params.limit || 20) + 20})}, 'Show more') : null)
+// card(p) = CB.el('div', {class: 'card'},
+//   CB.el('div', {class: 'row'}, CB.avatar(p.author), CB.userLink(p.author),
+//         CB.el('small', {class: 'muted'}, CB.time(p.created_at))),
+//   CB.el('p', {}, p.body),
+//   CB.el('div', {class: 'row'},
+//     CB.el('button', {testid: 'like-' + p.id, onclick: async () => {
+//         await CB.api(p.liked ? 'DELETE' : 'POST', '/api/posts/' + p.id + '/like');
+//         CB.refresh(); }}, (p.liked ? 'Unlike' : 'Like') + ' (' + p.like_count + ')'),
+//     CB.el('button', {testid: 'comments-' + p.id, onclick: () => CB.go('post', {id: p.id})},
+//           'Comments (' + p.comment_count + ')'),
+//     p.author.id === CB.me.id ? CB.el('button', {testid: 'delete-' + p.id, onclick: async () => {
+//         await CB.api('DELETE', '/api/posts/' + p.id); CB.refresh(); }}, 'Delete') : null))
+// Server answer: {posts: [Post], has_more}, Post = {id, author: U, body, created_at, like_count,
+// comment_count, liked}.
+CB.page('feed', {
+  title: 'Feed',
+  nav: 'Feed',
+  order: 40,
+  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+});
