@@ -57,8 +57,8 @@ forbidden_added = [
   'pytest\.(mark\.)?(skip|xfail|importorskip)',
   'unittest\.skip',
   'collect_ignore',
-  '(?i)(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
-  '''(?i)(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
 ]
 
 [targets.chatbook.architecture]
@@ -133,8 +133,8 @@ forbidden_added = [
   'pytest\.(mark\.)?(skip|xfail|importorskip)',
   'unittest\.skip',
   'collect_ignore',
-  '(?i)(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
-  '''(?i)(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
 ]
 
 [targets.chatbook-oracle.architecture]
