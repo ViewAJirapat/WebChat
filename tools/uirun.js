@@ -76,6 +76,49 @@ function scenarioError(message) {
 }
 
 // ------------------------------------------------------------------------------------ fake DOM
+//
+// As strict as Chrome where page code could rely on more: appendChild takes only nodes,
+// childNodes and children are live list views without Array methods (no map, filter), and a
+// select drops a value that matches none of its options.
+
+const INDEX = /^(0|[1-9][0-9]*)$/;
+
+// A live read-only view of get(): length, item(i), [i] and iteration; NodeList also has
+// forEach, entries, keys and values (an HTMLCollection has none of them).
+function liveList(get, kind) {
+  const methods = {
+    item: (i) => {
+      const list = get();
+      const n = Math.trunc(Number(i));
+      return n >= 0 && n < list.length ? list[n] : null;
+    },
+    toString: () => '[object ' + kind + ']',
+    [Symbol.iterator]: () => get().slice()[Symbol.iterator](),
+  };
+  if (kind === 'NodeList') {
+    methods.forEach = (fn, thisArg) => {
+      get().slice().forEach((n, i) => fn.call(thisArg, n, i, view));
+    };
+    methods.entries = () => get().slice().entries();
+    methods.keys = () => get().slice().keys();
+    methods.values = () => get().slice().values();
+  }
+  const view = new Proxy({}, {
+    get(target, prop) {
+      if (prop === 'length') return get().length;
+      if (typeof prop === 'string' && INDEX.test(prop)) return get()[Number(prop)];
+      return hasOwn(methods, prop) ? methods[prop] : undefined;
+    },
+    has(target, prop) {
+      if (prop === 'length' || hasOwn(methods, prop)) return true;
+      return typeof prop === 'string' && INDEX.test(prop) && Number(prop) < get().length;
+    },
+    set() {
+      return false; // read-only (a TypeError in strict code)
+    },
+  });
+  return view;
+}
 
 class FakeNode {
   constructor(doc, nodeType) {
@@ -124,7 +167,10 @@ class FakeElement extends FakeNode {
     super(doc, 1);
     this.localName = tag;
     this.tagName = tag.toUpperCase();
-    this.childNodes = [];
+    this.kids = []; // the runner's own child list; page code sees childNodes and children
+    this.nodeList = null;
+    this.collection = null;
+    this.noneSelected = false; // a select whose value matched no option
     this.attrs = new Map();
     this.listeners = new Map();
     this.checked = false;
@@ -153,6 +199,10 @@ class FakeElement extends FakeNode {
 
   removeAttribute(name) {
     this.attrs.delete(String(name).toLowerCase());
+  }
+
+  getAttributeNames() {
+    return Array.from(this.attrs.keys());
   }
 
   get className() {
@@ -208,16 +258,25 @@ class FakeElement extends FakeNode {
   }
 
   // tree
+  get childNodes() {
+    if (this.nodeList === null) this.nodeList = liveList(() => this.kids, 'NodeList');
+    return this.nodeList;
+  }
+
   get children() {
-    return this.childNodes.filter((n) => n.nodeType === 1);
+    if (this.collection === null) {
+      this.collection = liveList(() => this.kids.filter((n) => n.nodeType === 1),
+        'HTMLCollection');
+    }
+    return this.collection;
   }
 
   get firstChild() {
-    return this.childNodes.length ? this.childNodes[0] : null;
+    return this.kids.length ? this.kids[0] : null;
   }
 
   get lastChild() {
-    return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null;
+    return this.kids.length ? this.kids[this.kids.length - 1] : null;
   }
 
   coerce(node) {
@@ -231,7 +290,13 @@ class FakeElement extends FakeNode {
     }
     if (node.parentNode !== null) node.parentNode.removeChild(node);
     node.parentNode = this;
-    this.childNodes.push(node);
+    this.kids.push(node);
+    if (node.nodeType === 1) {
+      // a new option: a select with nothing selected selects its first option again
+      for (let n = this; n !== null; n = n.parentNode) {
+        if (n.localName === 'select') n.noneSelected = false;
+      }
+    }
   }
 
   append(...nodes) {
@@ -239,22 +304,27 @@ class FakeElement extends FakeNode {
   }
 
   appendChild(node) {
-    this.insert(this.coerce(node));
+    if (!(node instanceof FakeNode)) {
+      // as in Chrome: only append() turns strings into text
+      throw new TypeError(
+        "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+    }
+    this.insert(node);
     return node;
   }
 
   removeChild(node) {
-    const i = this.childNodes.indexOf(node);
+    const i = this.kids.indexOf(node);
     if (i < 0) throw new Error('NotFoundError: the node is not a child of this element');
-    this.childNodes.splice(i, 1);
+    this.kids.splice(i, 1);
     node.parentNode = null;
     return node;
   }
 
   replaceChildren(...nodes) {
     const list = nodes.map((n) => this.coerce(n));
-    for (const c of this.childNodes) c.parentNode = null;
-    this.childNodes = [];
+    for (const c of this.kids) c.parentNode = null;
+    this.kids = [];
     for (const n of list) this.insert(n);
   }
 
@@ -267,7 +337,7 @@ class FakeElement extends FakeNode {
 
   // text
   get textContent() {
-    return this.childNodes.map((c) => c.textContent).join('');
+    return this.kids.map((c) => c.textContent).join('');
   }
 
   set textContent(value) {
@@ -291,6 +361,7 @@ class FakeElement extends FakeNode {
 
   get value() {
     if (this.localName === 'select') {
+      if (this.noneSelected) return '';
       const values = this.optionElements().map((o) => o.value);
       if (this.ownValue !== undefined && values.includes(this.ownValue)) return this.ownValue;
       return values.length ? values[0] : '';
@@ -306,11 +377,20 @@ class FakeElement extends FakeNode {
   }
 
   set value(v) {
-    this.ownValue = v === null || v === undefined ? '' : String(v);
+    const s = v === null || v === undefined ? '' : String(v);
+    if (this.localName === 'select') {
+      // as in Chrome: a value no option has selects nothing (value reads ''); with no options
+      // yet, the first option inserted later is selected
+      const values = this.optionElements().map((o) => o.value);
+      this.ownValue = values.includes(s) ? s : undefined;
+      this.noneSelected = !values.includes(s) && values.length > 0;
+      return;
+    }
+    this.ownValue = s;
   }
 
   get scrollHeight() {
-    return 20 * this.childNodes.length;
+    return 20 * this.kids.length;
   }
 
   focus() {
@@ -376,7 +456,7 @@ class FakeDocument {
 function descendants(root) {
   const out = [];
   const visit = (n) => {
-    for (const c of n.childNodes) {
+    for (const c of n.kids) {
       if (c.nodeType !== 1) continue;
       out.push(c);
       visit(c);
@@ -442,13 +522,16 @@ function dispatch(target, type) {
   return ev;
 }
 
-// A click, then the browser's default action: a submit button submits its form.
+// A click, then the browser's default action: a submit button submits its form. A submit
+// nobody prevents would reload the page in the browser (CB.form and the search prevent it).
 function dispatchClick(target) {
   const ev = dispatch(target, 'click');
   if (ev.defaultPrevented) return;
   if (target.localName === 'button' && target.type === 'submit' && !target.disabled) {
     const form = closest(target, 'form');
-    if (form !== null) dispatch(form, 'submit');
+    if (form !== null && !dispatch(form, 'submit').defaultPrevented) {
+      rec.errors.push('a form was submitted without CB.form: the browser would reload the page');
+    }
   }
 }
 
@@ -465,7 +548,7 @@ function collect(node, out) {
   if (node.getAttribute('aria-hidden') === 'true') return;
   const inline = INLINE_TAGS.has(node.localName);
   if (!inline) out.push(' ');
-  for (const c of node.childNodes) collect(c, out);
+  for (const c of node.kids) collect(c, out);
   if (!inline) out.push(' ');
 }
 

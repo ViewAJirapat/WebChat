@@ -1,5 +1,6 @@
 """Validators (core/validate.py): every row of DESIGN 3.7. Only status codes are asserted."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -76,6 +77,15 @@ def test_body_str_min_len_zero_allows_empty() -> None:
 @pytest.mark.parametrize("body", [None, ["name"], "name", 5, {"other": "x"}, {"name": 5}])
 def test_body_str_rejects_bad_bodies(body: object) -> None:
     assert status(lambda: body_str(req(body), "name")) == 400
+
+
+@pytest.mark.parametrize("strip", [True, False])
+def test_body_str_rejects_a_lone_surrogate(strip: bool) -> None:
+    # JSON accepts "\ud800" but sqlite cannot store it: a 400, not a 500 at the INSERT
+    body = json.loads('{"x": "a\\ud800"}')
+    assert status(lambda: body_str(req(body), "x", strip=strip)) == 400
+    paired = json.loads('{"x": "a\\ud83d\\ude00"}')  # a valid pair is one character
+    assert body_str(req(paired), "x", strip=strip) == "a\U0001f600"
 
 
 @pytest.mark.parametrize("value", [None, True, 12, ["a"], {"a": 1}])

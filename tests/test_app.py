@@ -5,22 +5,25 @@ import io
 import json
 import re
 import socket
+import sqlite3
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from wsgiref.simple_server import make_server
+from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 import pytest
 
 import chatbook
 from chatbook import App, create_app
-from chatbook.__main__ import ThreadingWSGIServer
+from chatbook.__main__ import RequestHandler, ThreadingWSGIServer
 from chatbook.core.clock import FakeClock, SystemClock
 from chatbook.core.http import JSON_TYPE, HTTPError, Request, Response
 from chatbook.core.registry import RegistryError, Route, discover_ui, specificity
 from chatbook.core.users import new_session
+from chatbook.core.validate import body_str
 from chatbook.testing import Client
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "chatbook"
@@ -282,6 +285,63 @@ def test_integrity_error_is_409_and_rolls_back() -> None:
     assert c.rows("SELECT id FROM users") == []
 
 
+def test_primary_key_clash_is_409_and_rolls_back() -> None:
+    c = Client()
+
+    def twice(request: Request) -> Response:
+        insert_post(request)
+        for _ in range(2):
+            request.db.run(
+                "INSERT INTO friendships (user_id, friend_id, created_at) VALUES (?, ?, ?)", 1, 2, 0
+            )
+        return Response(201, {"ok": True})
+
+    add_route(c.app, "POST", "/api/t/twice", twice)
+    r = c.post("/api/t/twice")
+    assert (r.status, r.json) == (409, {"error": "conflict"})
+    assert c.rows("SELECT id FROM posts") == []
+    assert c.rows("SELECT user_id FROM friendships") == []
+
+
+# A handler bug, not a conflict: these constraint failures must not look like a 409.
+BROKEN_INSERTS = {
+    "NOT NULL": ("INSERT INTO comments (post_id, author_id, body) VALUES (?, ?, ?)", 1, 1, "x"),
+    "CHECK": (
+        "INSERT INTO conversations (kind, created_by, created_at) VALUES (?, ?, ?)",
+        "x",
+        1,
+        0,
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(BROKEN_INSERTS))
+def test_other_constraint_failures_are_unexpected_errors(
+    kind: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sql, *args = BROKEN_INSERTS[kind]
+
+    def broken(request: Request) -> Response:
+        insert_post(request)
+        request.db.run(sql, *args)
+        return Response(201, {"ok": True})
+
+    c = Client()  # raise_errors=True: the worker sees the real error and its traceback
+    add_route(c.app, "POST", "/api/t/broken", broken)
+    with pytest.raises(sqlite3.IntegrityError, match=f"{kind} constraint failed"):
+        c.post("/api/t/broken")
+    assert c.rows("SELECT id FROM posts") == []
+    assert c.get("/api/health").status == 200  # no transaction left open
+
+    app = new_app()  # production: a 500 with the traceback on stderr
+    add_route(app, "POST", "/api/t/broken", broken)
+    resp = app.handle("POST", "/api/t/broken")
+    assert (resp.status, resp.body) == (500, {"error": "internal error"})
+    err = capsys.readouterr().err
+    assert "Traceback" in err and f"{kind} constraint failed" in err
+    assert posts(app) == 0
+
+
 def test_unexpected_error_is_500_with_traceback_unless_raise_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -381,6 +441,37 @@ def test_wsgi_invalid_json_is_400() -> None:
     status, _, data = wsgi(new_app(), "POST", "/api/health", body=b"{")
     assert status.startswith("400 ")
     assert json.loads(data) == {"error": "request body is not valid JSON"}
+
+
+@pytest.mark.parametrize(
+    "body", [b"[" * 60000, b"[" * 30000 + b"]" * 30000], ids=["open", "balanced"]
+)
+def test_wsgi_deeply_nested_json_is_400(body: bytes) -> None:
+    # json.loads raises RecursionError (not ValueError) for these; still a JSON 400 answer
+    status, headers, data = wsgi(new_app(), "POST", "/api/health", body=body)
+    assert status.startswith("400 ")
+    assert headers["content-type"] == JSON_TYPE
+    assert json.loads(data) == {"error": "request body is not valid JSON"}
+
+
+def test_wsgi_short_body_is_400() -> None:
+    # fewer bytes than Content-Length: the client went away before sending them all
+    status, _, data = wsgi(new_app(), "POST", "/api/health", body=b"{}", length="10")
+    assert status.startswith("400 ")
+    assert json.loads(data) == {"error": "request body incomplete"}
+
+
+def test_wsgi_lone_surrogate_in_a_string_is_400() -> None:
+    app = new_app()
+
+    def named(request: Request) -> Response:
+        return Response(200, {"name": body_str(request, "name")})
+
+    add_route(app, "POST", "/api/t/named", named)
+    status, _, data = wsgi(app, "POST", "/api/t/named", body=b'{"name": "a\\ud800"}')
+    assert (status, json.loads(data)) == ("400 Bad Request", {"error": "name must be a string"})
+    status, _, data = wsgi(app, "POST", "/api/t/named", body=b'{"name": "a\\u00e9"}')
+    assert (status, json.loads(data)) == ("200 OK", {"name": "aé"})
 
 
 def test_wsgi_passes_body_query_path_and_headers() -> None:
@@ -531,34 +622,99 @@ def test_wsgi_runs_one_request_at_a_time() -> None:
     assert state[1] == 1
 
 
-def test_threaded_server_is_not_stalled_by_an_idle_socket() -> None:
-    app, state = _slow_app()
-    server = make_server("127.0.0.1", 0, app.wsgi, server_class=ThreadingWSGIServer)
+@contextmanager
+def serve(app: App, handler: type[WSGIRequestHandler] = RequestHandler) -> Iterator[int]:
+    """The app on the threaded server (as `python -m chatbook` runs it); yields the port."""
+    server = make_server(
+        "127.0.0.1", 0, app.wsgi, server_class=ThreadingWSGIServer, handler_class=handler
+    )
     assert server.daemon_threads
-    port = server.server_address[1]
     runner = threading.Thread(target=server.serve_forever, daemon=True)
     runner.start()
-    idle = socket.create_connection(("127.0.0.1", port))  # like a browser preconnect
-    results: list[int] = []
-
-    def get(path: str) -> None:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        try:
-            conn.request("GET", path)
-            results.append(conn.getresponse().status)
-        finally:
-            conn.close()
-
     try:
-        get("/api/health")
-        threads = [threading.Thread(target=get, args=("/api/t/slow",)) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(10)
+        yield server.server_address[1]
     finally:
-        idle.close()
         server.shutdown()
         server.server_close()
+
+
+def http_get(port: int, path: str, results: list[int]) -> None:
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", path)
+        results.append(conn.getresponse().status)
+    finally:
+        conn.close()
+
+
+def read_until_closed(sock: socket.socket) -> bytes:
+    sock.settimeout(5)
+    chunks: list[bytes] = []
+    while chunk := sock.recv(4096):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+STALLED_POST = b"POST /api/health HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n{"
+
+
+def test_threaded_server_is_not_stalled_by_an_idle_socket() -> None:
+    app, state = _slow_app()
+    results: list[int] = []
+    with serve(app) as port:
+        idle = socket.create_connection(("127.0.0.1", port))  # like a browser preconnect
+        try:
+            http_get(port, "/api/health", results)
+            threads = [
+                threading.Thread(target=http_get, args=(port, "/api/t/slow", results))
+                for _ in range(2)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(10)
+        finally:
+            idle.close()
     assert results == [200, 200, 200]
     assert state[1] == 1
+
+
+def test_a_client_stalled_mid_body_does_not_block_others() -> None:
+    # headers plus 1 of the 10 announced body bytes, then nothing: the body is read outside
+    # the request lock, so only this client's thread waits
+    results: list[int] = []
+    with serve(new_app()) as port:
+        stalled = socket.create_connection(("127.0.0.1", port))
+        try:
+            stalled.sendall(STALLED_POST)
+            time.sleep(0.2)  # let the server thread start waiting for the rest of the body
+            started = time.monotonic()
+            http_get(port, "/api/health", results)
+            assert time.monotonic() - started < 3
+        finally:
+            stalled.close()
+    assert results == [200]
+
+
+class QuickHandler(RequestHandler):
+    timeout = 0.5
+
+
+def test_silent_and_stalled_clients_are_dropped_after_the_timeout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert RequestHandler.timeout == 30
+    with serve(new_app(), QuickHandler) as port:
+        silent = socket.create_connection(("127.0.0.1", port))
+        stalled = socket.create_connection(("127.0.0.1", port))
+        try:
+            stalled.sendall(STALLED_POST)
+            assert read_until_closed(silent) == b""  # closed by the server, no answer
+            answer = read_until_closed(stalled)
+        finally:
+            silent.close()
+            stalled.close()
+    head, _, body = answer.partition(b"\r\n\r\n")
+    assert head.split(b"\r\n")[0].split(b" ")[1] == b"400", answer
+    assert json.loads(body) == {"error": "request body incomplete"}
+    assert "Traceback" not in capsys.readouterr().err

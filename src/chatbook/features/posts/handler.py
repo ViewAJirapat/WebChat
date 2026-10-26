@@ -2,9 +2,9 @@
 
 CONTRACT (keep this docstring; implement exactly this):
 Notation: db = request.db, me = request.me.id.
-post_json(db, row, me) (write it in this file) = {"id": row["id"],
-  "author": user_json(require_user(db, row["author_id"])), "body": row["body"],
-  "created_at": row["created_at"],
+post_json(db: Db, row: dict[str, Any], me: int) -> dict[str, Any]  (write it in this file) =
+  {"id": row["id"], "author": user_json(require_user(db, row["author_id"])),
+  "body": row["body"], "created_at": row["created_at"],
   "like_count": int(db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", row["id"])),
   "comment_count": int(db.value("SELECT COUNT(*) FROM comments WHERE post_id = ?", row["id"])),
   "liked": db.one("SELECT 1 FROM likes WHERE post_id = ? AND user_id = ?", row["id"], me)
@@ -13,7 +13,7 @@ POST /api/posts  body {"body"}
   text = body_str(request, "body", max_len=2000)
   pid = db.run("INSERT INTO posts (author_id, body, created_at) VALUES (?, ?, ?)",
                me, text, request.now)
-  -> 201 {"post": post_json(db, db.one("SELECT * FROM posts WHERE id = ?", pid), me)}
+  -> 201 {"post": post_json(db, visible_post(db, pid, me), me)}
 GET /api/feed?limit=&before=
   limit = query_int(request, "limit", default=20, lo=1, hi=100)
   before = query_opt_int(request, "before"); cursor = before if before is not None else 2**62

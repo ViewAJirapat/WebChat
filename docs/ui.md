@@ -26,7 +26,7 @@ CB.el(tag, props, ...children) -> node
 After creating a node you may only use: node.append(...), node.replaceChildren(...),
 node.textContent = '...', node.disabled = true/false. To change the page, call CB.refresh().
 
-CB.form({fields, submit, reset, onsubmit}) -> form node
+CB.form({fields, submit, reset, onsubmit}) -> form node   (every form; CB.el('form') throws)
   fields: [{name, label, type, value, options}]
     type: 'text' (default), 'password', 'textarea', 'select', 'checkboxes'
     options (select, checkboxes): [{value: '2', label: 'Bob'}]   values are strings

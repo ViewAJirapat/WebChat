@@ -6,9 +6,10 @@ from typing import Any
 
 import pytest
 
-from chatbook.testing import ALICE, ERIN, UiResult, run_page
+from chatbook.testing import ALICE, ERIN, UiResult, run_page, run_scenario
 
 REPO = Path(__file__).resolve().parents[1]
+CB_JS = REPO / "src" / "chatbook" / "core" / "static" / "cb.js"
 SAMPLE = str(Path(__file__).resolve().parent / "fixtures" / "sample_page.js")
 COUNT = "/api/sample/count"
 DATA: dict[str, Any] = {
@@ -170,6 +171,80 @@ def test_other_load_errors_are_recorded() -> None:
     assert "Could not load this page." in res.text
     assert len(res.errors) == 1 and "boom in load" in res.errors[0]
     assert page_calls(res) == []
+
+
+def test_a_failed_poll_keeps_the_page_and_the_typed_text() -> None:
+    # only a failed FIRST load shows the error card; a failed poll toasts and keeps the page
+    failing = {"GET /api/sample": [DATA, DATA, {"$status": 500, "error": "x"}, DATA]}
+    steps: list[dict[str, Any]] = [
+        {"fill": "Add", "values": {"name": "dra"}},
+        {"tick": 1000},  # load 2: fine
+        {"tick": 1000},  # load 3: the 500
+    ]
+    res = run(api=failing, steps=steps)
+    assert res.errors == []
+    assert res.toasts == ["x"]
+    assert "Could not load this page." not in res.text
+    assert "Renders: 2" in res.text  # the page of the last good load is still shown
+    assert form(res, "Add")["values"]["name"] == "dra"
+    res = run(api=failing, steps=[*steps, {"tick": 1000}])  # load 4: fine again
+    assert res.errors == [] and res.toasts == ["x"]
+    assert res.count("GET", "/api/sample") == 4
+    assert "Renders: 3" in res.text
+    assert form(res, "Add")["values"]["name"] == "dra"
+
+
+STILL_JS = """let first = null;
+let renders = 0;
+CB.page('still', {
+  title: 'Still', poll: 1000,
+  load: () => CB.api('GET', '/api/still'),
+  render: (d) => {
+    renders += 1;
+    const send = CB.el('button', {onclick: () => {
+      send.disabled = true;
+      send.textContent = 'Sending';
+      CB.refresh();
+    }}, 'Send');
+    const root = CB.el('div', {class: 'stack'}, CB.el('p', {}, 'n=' + d.n), send,
+      CB.el('button', {onclick: () => CB.toast(first.isConnected + ' ' + renders)}, 'Report'));
+    if (first === null) first = root;
+    return root;
+  },
+});
+"""
+
+
+def test_an_unchanged_poll_leaves_the_mounted_page_alone(tmp_path: Path) -> None:
+    # load and render run on every poll; the same data and tree are not mounted again, so
+    # the nodes the user is pressing, selecting or focusing stay in place
+    still = write(tmp_path, "still.js", STILL_JS)
+    api = {"GET /api/still": [{"n": 1}, {"n": 1}, {"n": 1}, {"n": 2}]}
+    steps: list[dict[str, Any]] = [{"tick": 1000}, {"tick": 1000}, {"click": "Report"}]
+    res = run_page("still", "still", api=api, steps=steps, files=[still])
+    assert res.errors == []
+    assert res.toasts == ["true 3"]  # three renders, the first tree still mounted
+    res = run_page("still", "still", api=api, steps=steps * 2, files=[still])
+    assert res.errors == []
+    assert res.toasts == ["true 3", "false 5"]  # n changed: the new tree replaced it
+    assert "n=2" in res.text
+
+
+def test_a_page_changed_by_its_own_code_is_mounted_again(tmp_path: Path) -> None:
+    # the click disabled and relabelled its button, then refreshed with the same data:
+    # the page is rendered and mounted again, as before the change
+    still = write(tmp_path, "still.js", STILL_JS)
+    res = run_page(
+        "still",
+        "still",
+        api={"GET /api/still": {"n": 1}},
+        steps=[{"click": "Send"}],
+        files=[still],
+    )
+    assert res.errors == []
+    assert res.count("GET", "/api/still") == 2
+    assert {"label": "Send", "disabled": False, "testid": None} in res.buttons
+    assert "Sending" not in res.text
 
 
 # --- forms ------------------------------------------------------------------------------
@@ -358,6 +433,89 @@ def test_unknown_el_prop_and_banned_tag_throw() -> None:
     assert 'unknown prop "href"' in res.errors[0]
     assert "script" in res.errors[1]
     assert not any(e.startswith("scenario:") for e in res.errors)
+
+
+FORM_JS = """CB.page('handmade', {title: 'Handmade', render: () => CB.el('div', {},
+  CB.el('button', {onclick: () => CB.el('form', {class: 'row'})}, 'Make form'))});
+"""
+
+
+def test_a_hand_built_form_is_refused(tmp_path: Path) -> None:
+    # in the browser its submit would reload the page and put the fields in the URL
+    page = write(tmp_path, "handmade.js", FORM_JS)
+    res = run_page("handmade", "handmade", files=[page], steps=[{"click": "Make form"}])
+    assert len(res.errors) == 1, res.errors
+    assert 'CB.el: tag "form" is not allowed; use CB.form' in res.errors[0]
+    assert "/ui/handmade.js:2" in res.errors[0]
+
+
+def test_the_runner_reports_a_submit_nobody_prevents(tmp_path: Path) -> None:
+    # a cb.js copy without the form ban stands in for any other way a plain form appears
+    ban = "if (name === 'form') throw"
+    source = CB_JS.read_text(encoding="utf-8")
+    assert source.count(ban) == 1
+    loose = write(tmp_path, "cb_loose.js", source.replace(ban, "if (false) throw"))
+    page = write(
+        tmp_path,
+        "plain.js",
+        "CB.page('plain', {title: 'Plain', render: () => CB.el('form', {},\n"
+        "  CB.el('button', {type: 'submit', onclick: () => CB.toast('sent')}, 'Send'))});\n",
+    )
+    scenario = {"cb": loose, "files": [page], "me": ALICE, "page": "plain"}
+    res = run_scenario(scenario | {"steps": [{"click": "Send"}]})
+    assert res["toasts"] == ["sent"]
+    assert res["errors"] == [
+        "a form was submitted without CB.form: the browser would reload the page"
+    ]
+    res = run_scenario(
+        scenario
+        | {
+            "files": [SAMPLE],
+            "page": "sample",
+            "api": {"GET /api/sample": DATA, "GET " + COUNT: {"n": 0}},
+            "steps": [{"submit": "Find", "values": {"q": "3"}}],
+        }
+    )
+    assert res["errors"] == []  # CB.form prevents the browser's submit
+
+
+STRICT_JS = """CB.page('strict', {title: 'Strict', render: () => {
+  const box = CB.el('div', {}, CB.el('span', {}, 'a'), CB.el('span', {}, 'b'));
+  const sel = CB.el('select', {value: '2'});
+  sel.append(CB.el('option', {value: '1'}, 'One'), CB.el('option', {value: '2'}, 'Two'));
+  const later = CB.el('select', {}, CB.el('option', {value: '1'}, 'One'),
+    CB.el('option', {value: '2'}, 'Two'));
+  later.value = '2';
+  const gone = CB.el('select', {}, CB.el('option', {value: '1'}, 'One'));
+  gone.value = '9';
+  const live = box.childNodes;
+  box.append(CB.el('span', {}, 'c'));
+  return CB.el('div', {},
+    CB.el('button', {onclick: () => box.appendChild('text')}, 'Append text'),
+    CB.el('button', {onclick: () => box.childNodes.map((n) => n)}, 'Map'),
+    CB.el('button', {onclick: () => box.children.forEach((n) => n)}, 'Each'),
+    CB.el('button', {onclick: () => CB.toast([sel.value, later.value, gone.value, live.length,
+      Array.from(box.children).length, box.childNodes[2].textContent,
+      typeof box.childNodes.forEach, typeof box.children.forEach].join(' '))}, 'Read'));
+}});
+"""
+
+
+def test_the_fake_dom_is_as_strict_as_the_browser(tmp_path: Path) -> None:
+    page = write(tmp_path, "strict.js", STRICT_JS)
+    res = run_page("strict", "strict", files=[page], steps=[{"click": "Read"}])
+    assert res.errors == []
+    # Chrome: a value set before the options exist selects the first option; a value no
+    # option has selects nothing; childNodes is live; only NodeList has forEach
+    assert res.toasts == ["1 2  3 3 c function undefined"]
+    for label, message in [
+        ("Append text", "parameter 1 is not of type 'Node'"),
+        ("Map", "map is not a function"),
+        ("Each", "forEach is not a function"),
+    ]:
+        res = run_page("strict", "strict", files=[page], steps=[{"click": label}])
+        assert len(res.errors) == 1, res.errors
+        assert message in res.errors[0] and "/ui/strict.js:" in res.errors[0], res.errors
 
 
 def test_the_documented_toolkit_exists_and_the_runner_has_no_browser_globals(

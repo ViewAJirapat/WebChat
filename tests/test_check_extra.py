@@ -160,6 +160,99 @@ def test_problems_are_reported_with_file_line_and_hint(tmp_path: Path) -> None:
     assert "the schema belongs to the frame" in out
 
 
+# Schema SQL: line number -> source line; every line below the docstring is a problem.
+DDL_BAD = '''"""ddl."""
+
+A = "drop table users"
+B = "CREATE UNIQUE INDEX i ON t (a)"
+C = "ATTACH 'x.db' AS y"
+D = "create temp table t (a)"
+E = "CREATE " "TABLE t (a)"
+F = "ALTER " + "TABLE users ADD x"
+'''
+# English that only looks like schema words: docstrings and messages are fine.
+DDL_FINE = '''"""groups: Create a group and DROP a member."""
+
+from chatbook.core.api import HTTPError, Request, Response
+
+
+class Note:
+    """Create a note."""
+
+
+def create_group(request: Request) -> Response:
+    """Create a new group conversation."""
+    if request.body is None:
+        raise HTTPError(400, "cannot create a group alone")
+    return Response(200, {"hint": "drop the title or alter it", "x": "dropdown"})
+'''
+
+
+def test_schema_sql_is_rejected_but_english_words_are_not(tmp_path: Path) -> None:
+    make_tree(tmp_path, {"ddlbad/handler.py": DDL_BAD, "ddlfine/handler.py": DDL_FINE})
+    code, out = check(tmp_path)
+    assert code == 1, out
+    for number in range(3, len(DDL_BAD.splitlines()) + 1):
+        assert re.search(rf"ddlbad[/\\]handler\.py:{number}: ", out), f"line {number}:\n{out}"
+    assert "ddlfine" not in out, out
+    assert "the schema belongs to the frame" in out
+
+
+# SQL built at run time, one way per file; the finding's split literal comes first.
+SQL_BAD = {
+    # SQL on a plain line, the value on an f" continuation line (adjacent literals)
+    "split": 'def f(db, q):\n    return db.all(\n        "SELECT * FROM users"\n'
+    "        f\" WHERE username LIKE '%{q}%'\"\n    )\n",
+    "lower": 'def f(db, me):\n    return db.one(f"select * from users where id = {me}")\n',
+    "triple": 'def f(db, me):\n    return db.one(f"""SELECT *\n'
+    '    FROM users WHERE id = {me}""")\n',
+    "rprefix": 'def f(db, me):\n    return db.one(rf"SELECT * FROM users WHERE id = {me}")\n',
+    "upper": 'def f(db, me):\n    return db.one(F"SELECT * FROM users WHERE id = {me}")\n',
+    "plus": 'def f(db, me):\n    return db.all("SELECT * FROM users WHERE id = " + str(me))\n',
+    "percent": 'def f(db, me):\n    return db.all("SELECT * FROM users WHERE id = %d" % me)\n',
+    "format": 'def f(db, me):\n    return db.all("SELECT * FROM users WHERE id = {}".format(me))\n',
+    "variable": 'def f(db, me):\n    cond = f" AND id = {me}"\n'
+    '    sql = "SELECT * FROM users WHERE 1 = 1" + cond\n    return db.all(sql)\n',
+    "augmented": 'def f(db, me):\n    sql = "SELECT * FROM users"\n'
+    '    sql += " WHERE id = " + str(me)\n    return db.all(sql)\n',
+    "inlist": 'def f(db, ids):\n    marks = ", ".join("?" * len(ids))\n'
+    '    return db.all("SELECT * FROM users WHERE id IN (" + marks + ")", *ids)\n',
+}
+# Placeholders only: adjacent literals, a constant, a choice of literals, messages.
+SQL_FINE = '''"""posts: SELECT * FROM posts WHERE id = ? (the CONTRACT may quote SQL)."""
+
+from typing import Any
+
+FEED = "SELECT * FROM posts WHERE author_id = ? ORDER BY id DESC"
+
+
+def feed(db: Any, me: int, before: int | None, pid: int) -> Any:
+    rows = db.all(FEED, me)
+    sql = "SELECT * FROM posts WHERE id < ?" if before else "SELECT * FROM posts WHERE 1 = ?"
+    more = db.all(sql, before or 1)
+    row = db.one(
+        "SELECT * FROM posts WHERE id = ?"
+        " AND author_id = ?",
+        pid,
+        me,
+    )
+    if row is None:
+        raise ValueError(f"cannot delete post {pid}: select another one")
+    return rows, more, db.page("SELECT * FROM posts ORDER BY id", limit=5), f"{me}:{pid}"
+'''
+
+
+def test_sql_built_at_run_time_is_rejected(tmp_path: Path) -> None:
+    files = {f"sql_{name}/handler.py": text for name, text in SQL_BAD.items()}
+    make_tree(tmp_path, files | {"sql_fine/handler.py": SQL_FINE})
+    code, out = check(tmp_path)
+    assert code == 1, out
+    for name in SQL_BAD:
+        pattern = rf"sql_{name}[/\\]handler\.py:\d+: .*\(fix: SQL must be one string literal"
+        assert re.search(pattern, out), f"{name} not reported:\n{out}"
+    assert "sql_fine" not in out, out
+
+
 def test_node_missing_fails_with_the_install_hint(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     make_tree(root, {"good/__init__.py": '"""good."""\n', "good/ui.js": GOOD_UI})

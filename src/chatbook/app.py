@@ -149,11 +149,10 @@ class App:
         except HTTPError as exc:
             self.db._rollback()
             return Response(exc.status, {"error": exc.message})
-        except sqlite3.IntegrityError:
+        except Exception as exc:
             self.db._rollback()
-            return Response(409, {"error": "conflict"})
-        except Exception:
-            self.db._rollback()
+            if _is_conflict(exc):
+                return Response(409, {"error": "conflict"})
             if self.raise_errors:
                 raise
             traceback.print_exc()
@@ -202,46 +201,74 @@ class App:
     # -- WSGI ----------------------------------------------------------------------------
 
     def wsgi(self, environ: WSGIEnvironment, start_response: StartResponse) -> Iterable[bytes]:
-        # One request at a time: the single sqlite connection and its per-request
-        # transaction stay serial even on the threaded server.
-        with self._lock:
-            method = str(environ.get("REQUEST_METHOD", "GET")).upper()
-            resp = self._from_environ(environ, "GET" if method == "HEAD" else method)
-            try:
-                status, headers, data = encode_response(resp)
-            except (TypeError, ValueError):  # a body json.dumps cannot encode
-                traceback.print_exc()
-                status, headers, data = encode_response(Response(500, {"error": "internal error"}))
-            start_response(status, headers)
-            return [b""] if method == "HEAD" else [data]
-
-    def _from_environ(self, environ: WSGIEnvironment, method: str) -> Response:
-        raw_length = str(environ.get("CONTENT_LENGTH") or "").strip() or "0"
-        # ASCII digits only: rejects negatives (read(-1) would block) and the non-ASCII
-        # digits that str.isdigit() accepts
-        if not (raw_length.isascii() and raw_length.isdigit()):
-            return Response(400, {"error": "bad Content-Length"})
-        length = int(raw_length)
-        if length > MAX_BODY:
-            return Response(413, {"error": "request body too large"})
-        raw = environ["wsgi.input"].read(length) if length else b""
-        try:
-            body = json.loads(raw) if raw else None
-        except ValueError:
-            return Response(400, {"error": "request body is not valid JSON"})
-        path = _utf8(str(environ.get("PATH_INFO", "/")))
-        query = dict(parse_qsl(_utf8(str(environ.get("QUERY_STRING", "")))))
-        headers: dict[str, str] = {}
-        for key, value in environ.items():
-            if key.startswith("HTTP_"):
-                headers[key[5:].lower().replace("_", "-")] = str(value)
-        if environ.get("CONTENT_TYPE"):
-            headers["content-type"] = str(environ["CONTENT_TYPE"])
-        return self.handle(method, path, body, query, headers)
+        method = str(environ.get("REQUEST_METHOD", "GET")).upper()
+        # The body is read and parsed before taking the lock: a client that stalls in the
+        # middle of its request holds only its own thread.
+        parsed = _parse(environ)
+        if isinstance(parsed, Response):
+            status, headers, data = _encode(parsed)
+        else:
+            # One request at a time: the single sqlite connection and its per-request
+            # transaction stay serial even on the threaded server.
+            with self._lock:
+                resp = self.handle("GET" if method == "HEAD" else method, *parsed)
+                status, headers, data = _encode(resp)
+        start_response(status, headers)
+        return [b""] if method == "HEAD" else [data]
 
 
 # ---------------------------------------------------------------------------------------
 # Helpers
+
+
+# sqlite reports these for a UNIQUE or PRIMARY KEY clash (a race or a duplicate row): a 409.
+# Every other constraint failure (NOT NULL, CHECK, a type) is a bug in the handler.
+CONFLICT_ERRORS = ("SQLITE_CONSTRAINT_UNIQUE", "SQLITE_CONSTRAINT_PRIMARYKEY")
+
+
+def _is_conflict(exc: Exception) -> bool:
+    return isinstance(exc, sqlite3.IntegrityError) and exc.sqlite_errorname in CONFLICT_ERRORS
+
+
+def _parse(
+    environ: WSGIEnvironment,
+) -> Response | tuple[str, object, dict[str, str], dict[str, str]]:
+    """(path, body, query, headers) of a WSGI request, or the 400/413 answer for a bad body."""
+    raw_length = str(environ.get("CONTENT_LENGTH") or "").strip() or "0"
+    # ASCII digits only: rejects negatives (read(-1) would block) and the non-ASCII
+    # digits that str.isdigit() accepts
+    if not (raw_length.isascii() and raw_length.isdigit()):
+        return Response(400, {"error": "bad Content-Length"})
+    length = int(raw_length)
+    if length > MAX_BODY:
+        return Response(413, {"error": "request body too large"})
+    try:
+        raw = environ["wsgi.input"].read(length) if length else b""
+    except OSError:  # the socket timed out or the client went away
+        return Response(400, {"error": "request body incomplete"})
+    if len(raw) < length:
+        return Response(400, {"error": "request body incomplete"})
+    try:
+        body = json.loads(raw) if raw else None
+    except (ValueError, RecursionError):  # RecursionError: a hostile, deeply nested body
+        return Response(400, {"error": "request body is not valid JSON"})
+    path = _utf8(str(environ.get("PATH_INFO", "/")))
+    query = dict(parse_qsl(_utf8(str(environ.get("QUERY_STRING", "")))))
+    headers: dict[str, str] = {}
+    for key, value in environ.items():
+        if key.startswith("HTTP_"):
+            headers[key[5:].lower().replace("_", "-")] = str(value)
+    if environ.get("CONTENT_TYPE"):
+        headers["content-type"] = str(environ["CONTENT_TYPE"])
+    return path, body, query, headers
+
+
+def _encode(resp: Response) -> tuple[str, list[tuple[str, str]], bytes]:
+    try:
+        return encode_response(resp)
+    except (TypeError, ValueError):  # a body json.dumps cannot encode
+        traceback.print_exc()
+        return encode_response(Response(500, {"error": "internal error"}))
 
 
 def wrap_ui(feature: str, text: str) -> str:

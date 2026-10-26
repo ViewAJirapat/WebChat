@@ -27,6 +27,10 @@ def body_str(
     value = _body(request).get(name)
     if not isinstance(value, str):
         raise HTTPError(400, f"{name} must be a string")
+    try:
+        value.encode("utf-8")  # JSON allows a lone surrogate ("\ud800"); sqlite does not
+    except UnicodeEncodeError:
+        raise HTTPError(400, f"{name} must be a string") from None
     if strip:
         value = value.strip()
     if not min_len <= len(value) <= max_len:

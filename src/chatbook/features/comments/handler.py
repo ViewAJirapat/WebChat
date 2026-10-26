@@ -11,8 +11,10 @@ GET /api/posts/{id}/comments
 POST /api/posts/{id}/comments  body {"body"}
   pid = path_id(request); visible_post(db, pid, me)                  (404)
   text = body_str(request, "body", max_len=1000)
-  cid = INSERT INTO comments (post_id, author_id, body, created_at)
-  -> 201 {"comment": K(the new row)}
+  cid = db.run("INSERT INTO comments (post_id, author_id, body, created_at)"
+               " VALUES (?, ?, ?, ?)", pid, me, text, request.now)
+  -> 201 {"comment": K({"id": cid, "post_id": pid, "author_id": me, "body": text,
+                        "created_at": request.now})}
 DELETE /api/comments/{id}
   cid = path_id(request); row = db.one("SELECT * FROM comments WHERE id = ?", cid)
   row is None -> 404

@@ -173,6 +173,8 @@
       throw new Error('CB.el: bad tag ' + JSON.stringify(String(tag)) +
         '; use an HTML tag name such as "div"');
     }
+    // A hand-built form would reload the page on submit (and put the fields in the URL).
+    if (name === 'form') throw new Error('CB.el: tag "form" is not allowed; use CB.form');
     if (BANNED_TAGS.includes(name)) throw new Error('CB.el: tag "' + name + '" is not allowed');
     let p = props;
     if (p !== null && p !== undefined && !isPlainObject(p)) {
@@ -505,6 +507,51 @@
     });
   }
 
+  // A fingerprint of a list of nodes: tags, attributes, text, and the state a page sets
+  // (disabled, option and checkbox values), not the state the user changes (typed text,
+  // ticked boxes, the selected option). Equal fingerprints: a re-mount would show the same.
+  function fingerprint(list) {
+    const out = [];
+    const visit = (n) => {
+      if (n.nodeType === 3) {
+        out.push('#' + n.data);
+        return;
+      }
+      if (n.nodeType !== 1) return;
+      const tag = tagOf(n);
+      out.push('<' + tag);
+      for (const a of n.getAttributeNames().slice().sort()) {
+        out.push('@' + a + '=' + n.getAttribute(a));
+      }
+      if (n.disabled === true) out.push('!disabled');
+      const type = lower(n.getAttribute('type'));
+      if (tag === 'option' || (tag === 'input' && (type === 'checkbox' || type === 'radio'))) {
+        out.push('=' + n.value);
+      }
+      const kids = n.childNodes;
+      for (let i = 0; i < kids.length; i++) visit(kids[i]);
+      out.push('>');
+    };
+    for (const n of list) visit(n);
+    return JSON.stringify(out);
+  }
+
+  function mountedNodes() {
+    const kids = rootEl('cb-main').childNodes;
+    const out = [];
+    for (let i = 0; i < kids.length; i++) out.push(kids[i]);
+    return out;
+  }
+
+  // What a render showed: its data and the user it was rendered for (null if not JSON).
+  function dataKey(data) {
+    try {
+      return JSON.stringify([data === undefined ? null : data, state.me]);
+    } catch (err) {
+      return null;
+    }
+  }
+
   function loadingNode() {
     return el('p', {class: 'muted'}, 'Loading...');
   }
@@ -579,6 +626,7 @@
       again: false,
       first: true,
       timer: null,
+      shown: null, // dataKey() of the render that is mounted
     };
     state.view = view;
     updateTitle();
@@ -640,7 +688,9 @@
       } catch (err) {
         if (!view.alive) return;
         handleError(err);
-        mount([errorNode()], false, true);
+        // A failed first load shows the error card. A failed poll or refresh keeps the page
+        // that is shown, with its typed text: the toast (or the error record) tells.
+        if (view.first) mount([errorNode()], false, true);
         return;
       }
       if (!view.alive) return;
@@ -656,10 +706,19 @@
       nodes = toNodes(child, [], 'render of page "' + view.name + '"');
     } catch (err) {
       handleError(err);
+      view.shown = null;
       mount([errorNode()], false, true);
       return;
     }
+    const key = dataKey(data);
+    // Same data, same user and the same tree as the one mounted: leave the page alone, so
+    // a poll does not drop a click in progress, the text selection or the focus.
+    if (!view.first && key !== null && key === view.shown &&
+        fingerprint(nodes) === fingerprint(mountedNodes())) {
+      return;
+    }
     mount(nodes, !view.first, view.first);
+    view.shown = key;
     view.first = false;
   }
 

@@ -7,7 +7,7 @@ in the current directory).
 import argparse
 import os
 import socketserver
-from wsgiref.simple_server import WSGIServer, make_server
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 from chatbook.app import App, create_app
 from chatbook.core import demo
@@ -18,6 +18,20 @@ class ThreadingWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
     The App's lock still runs one request at a time."""
 
     daemon_threads = True
+
+
+class RequestHandler(WSGIRequestHandler):
+    """Drops a connection that stays silent for `timeout` seconds, so a stuck client does not
+    keep its thread forever. A silent socket is closed quietly (no traceback); a body that
+    stops arriving ends that request with a 400 (App.wsgi)."""
+
+    timeout = 30
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except TimeoutError:
+            self.close_connection = True
 
 
 def seed_demo(app: App) -> bool:
@@ -49,7 +63,9 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"  {username} / {demo.DEMO_PASSWORD}   ({name})")
         else:
             print("demo: the database already has users; nothing seeded")
-    with make_server(host, port, app.wsgi, server_class=ThreadingWSGIServer) as server:
+    with make_server(
+        host, port, app.wsgi, server_class=ThreadingWSGIServer, handler_class=RequestHandler
+    ) as server:
         for r in app.routes:
             print(f"{r.method:<6} {r.pattern:<40} {r.feature}")
         for feature in app.ui_features:

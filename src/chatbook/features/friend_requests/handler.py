@@ -14,7 +14,8 @@ POST /api/friends/requests  body {"user_id"}  checks in this order:
      -> 200 {"status": "friends", "friend": user_json(require_user(db, other))}
   7. rid = db.run("INSERT INTO friend_requests (from_id, to_id, created_at) VALUES (?, ?, ?)",
                   me, other, request.now)
-     -> 201 {"status": "pending", "request": R(the new row)}
+     -> 201 {"status": "pending",
+             "request": R({"id": rid, "from_id": me, "to_id": other, "created_at": request.now})}
 GET /api/friends/requests
   -> 200 {"incoming": [R(row) for rows WHERE to_id = me ORDER BY id DESC],
           "outgoing": [R(row) for rows WHERE from_id = me ORDER BY id DESC]}

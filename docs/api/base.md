@@ -12,6 +12,7 @@ HTTPError(status, message)    raise it; the app answers {"error": message}
 The app commits after your handler returns a status < 400 and rolls back otherwise.
 
 ## Database (request.db), always ? placeholders, never f-strings or + for SQL
+Db: the type of request.db (import it from chatbook.core.api to annotate helpers: db: Db)
 one(sql, *args) -> dict | None          first row
 all(sql, *args) -> list[dict]           all rows
 value(sql, *args) -> Any                first column of the first row, or None
