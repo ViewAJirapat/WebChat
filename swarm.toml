@@ -49,13 +49,16 @@ protected = [
 context_files = []             # each task lists its own read-only references in `files`
 forbidden_added = [
   '#\s*type:\s*ignore',
-  '#\s*noqa',
+  '(?i)#\s*noqa',
+  '(?i)#\s*(ruff|flake8)\s*:\s*noqa',
+  '(?i)#\s*mypy\s*:',
+  '(?i)#\s*(fmt|yapf)\s*:\s*(off|skip|disable)',
   '#\s*pragma:\s*no\s*cover',
   'pytest\.(mark\.)?(skip|xfail|importorskip)',
   'unittest\.skip',
   'collect_ignore',
-  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
-  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+  '(?i)(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?i)(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
 ]
 
 [targets.chatbook.architecture]
@@ -122,13 +125,16 @@ protected = [
 context_files = []             # each task lists its own read-only references in `files`
 forbidden_added = [
   '#\s*type:\s*ignore',
-  '#\s*noqa',
+  '(?i)#\s*noqa',
+  '(?i)#\s*(ruff|flake8)\s*:\s*noqa',
+  '(?i)#\s*mypy\s*:',
+  '(?i)#\s*(fmt|yapf)\s*:\s*(off|skip|disable)',
   '#\s*pragma:\s*no\s*cover',
   'pytest\.(mark\.)?(skip|xfail|importorskip)',
   'unittest\.skip',
   'collect_ignore',
-  '(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
-  '''(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
+  '(?i)(?<![\w])f"[^"\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b',
+  '''(?i)(?<![\w])f'[^'\n]*\b(SELECT|INSERT|UPDATE|DELETE)\b''',
 ]
 
 [targets.chatbook-oracle.architecture]
@@ -167,13 +173,6 @@ env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
 model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
 extra_args = ["--map-tokens", "0", "--architect"]
 
-[engines.local-14b-arch-map]       # experiment: same with a small repo map
-kind = "aider"
-model = "ollama_chat/qwen2.5-coder:14b"
-env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
-model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
-extra_args = ["--map-tokens", "512", "--architect"]
-
 [engines.local-14b]                # fallback: one pass, whole-file edits
 kind = "aider"
 model = "ollama_chat/qwen2.5-coder:14b"
@@ -186,14 +185,14 @@ kind = "aider"
 model = "ollama_chat/qwen2.5-coder:7b"
 env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
 model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
-extra_args = ["--map-tokens", "1024", "--architect"]
+extra_args = ["--map-tokens", "0", "--architect"]
 
 [engines.local-7b]
 kind = "aider"
 model = "ollama_chat/qwen2.5-coder:7b"
 env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
 model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
-extra_args = ["--map-tokens", "1024"]
+extra_args = ["--map-tokens", "0"]
 
 # Only if the owner pulls qwen3-coder:30b (18 GB download; doubtful with 16 GB RAM):
 # [engines.local-30b-arch]
@@ -201,7 +200,7 @@ extra_args = ["--map-tokens", "1024"]
 # model = "ollama_chat/qwen3-coder:30b"
 # env = { OLLAMA_API_BASE = "http://127.0.0.1:11434" }
 # model_settings = "E:/Playground_Projects/04_AgentSwarm/config/aider.model.settings.yml"
-# extra_args = ["--map-tokens", "1024", "--architect"]
+# extra_args = ["--map-tokens", "0", "--architect"]
 
 [engines.oracle]
 kind = "oracle"
