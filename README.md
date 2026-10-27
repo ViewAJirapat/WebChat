@@ -36,6 +36,15 @@ python tools/check_extra.py
 
 Plus the import rules: `swarm -t chatbook archlint` (see `../harness/swarm.toml`).
 
+`check_extra.py` also checks that each feature file still begins with its CONTRACT block, as
+recorded in `tools/contracts.json`. Staff who change a stub's CONTRACT block or add a stub
+regenerate that file, review its diff and commit it with the stub:
+
+```
+python tools/check_extra.py --write-contracts
+git diff tools/contracts.json
+```
+
 ## Layout
 
 - `src/chatbook/app.py`: dispatch, auth, one transaction per request, static files, WSGI.
@@ -45,4 +54,5 @@ Plus the import rules: `swarm -t chatbook archlint` (see `../harness/swarm.toml`
   (a page), discovered at startup.
 - `src/chatbook/testing.py`: the test kit for hidden tests (`Client`, `run_page`).
 - `tools/uirun.js`: headless page runner (real `cb.js`, fake DOM). `tools/check_extra.py`: the
-  JS and file-size gate.
+  JS, file-size, SQL and CONTRACT-block gate. `tools/contracts.json`: the CONTRACT block each
+  feature file must begin with (generated, see above).

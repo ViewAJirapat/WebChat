@@ -7,8 +7,9 @@ everything passes. The task names the one feature folder you may change.
 - The feature folder `src/chatbook/features/<name>/` and its stub file already exist. Edit the
   stub. Keep its `@route(...)` lines and function names, or its `CB.page(...)` name, nav and
   order, exactly as they are.
-- Keep the CONTRACT block at the top of the file. Implement exactly what it and the task say:
-  routes, JSON keys, status codes, the order of checks, list order, texts and labels.
+- The file must still begin with its CONTRACT block, unchanged; your code goes below it.
+- Implement exactly what the CONTRACT and the task say: routes, JSON keys, status codes, the
+  order of checks, list order, texts and labels.
 - Keep the file under 120 lines. Add no files unless the task asks.
 
 ## Python (handler.py)

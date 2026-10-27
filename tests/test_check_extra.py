@@ -1,11 +1,14 @@
 """The extra gate (tools/check_extra.py), run on small throwaway trees outside the repo."""
 
+import importlib.util
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -67,18 +70,21 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def make_tree(root: Path, features: dict[str, str]) -> None:
-    """A minimal repo copy: the tool itself plus src/chatbook/features/<path> files."""
+def make_tree(root: Path, features: dict[str, str], snapshot: bool = True) -> None:
+    """A minimal repo copy: the tool itself plus src/chatbook/features/<path> files, and an
+    empty CONTRACT snapshot unless `snapshot` is False."""
     write(root / "tools" / "check_extra.py", (REPO / "tools" / "check_extra.py").read_text("utf-8"))
+    if snapshot:
+        write(root / "tools" / "contracts.json", '{"files": {}}\n')
     write(root / "src" / "chatbook" / "__init__.py", "")
     write(root / "src" / "chatbook" / "features" / "__init__.py", "")
     for rel, text in features.items():
         write(root / "src" / "chatbook" / "features" / rel, text)
 
 
-def check(root: Path, env: dict[str, str] | None = None) -> tuple[int, str]:
+def check(root: Path, env: dict[str, str] | None = None, *args: str) -> tuple[int, str]:
     proc = subprocess.run(
-        [sys.executable, "tools/check_extra.py"],
+        [sys.executable, "tools/check_extra.py", *args],
         cwd=str(root),
         capture_output=True,
         text=True,
@@ -261,3 +267,145 @@ def test_node_missing_fails_with_the_install_hint(tmp_path: Path) -> None:
     code, out = check(root, env={**os.environ, "PATH": str(empty)})
     assert code == 1, out
     assert "install Node.js 24 and put it on PATH" in out
+
+
+# CONTRACT blocks (section 3.17): one stub of each kind, split into its block and its code.
+PY_BLOCK = '''"""demo: one route.
+
+CONTRACT (keep this docstring; implement exactly this):
+GET /api/demo
+  -> 200 {"ok": true}
+"""
+'''
+PY_CODE = """
+from chatbook.core.api import HTTPError, Request, Response, route
+
+
+@route("GET", "/api/demo")
+def demo(request: Request) -> Response:
+    raise HTTPError(501, "not implemented")
+"""
+JS_BLOCK = """// page_demo: a page.
+// CONTRACT (keep this comment; implement exactly this):
+// CB.page('demo', {title: 'Demo', render})
+// render() -> CB.el('p', {}, 'Demo')
+"""
+JS_CODE = """CB.page('demo', {
+  title: 'Demo',
+  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+});
+"""
+PY = "demo/handler.py"
+JS = "page_demo/ui.js"
+CONTRACT_HINT = "(fix: restore it verbatim at the top of the file, then put your code below it)"
+
+
+def test_unchanged_stubs_and_code_below_the_contract_block_pass(tmp_path: Path) -> None:
+    make_tree(tmp_path, {PY: PY_BLOCK + PY_CODE, JS: JS_BLOCK + JS_CODE}, snapshot=False)
+    code, out = check(tmp_path, None, "--write-contracts")  # as staff make the snapshot
+    assert code == 0 and "2 CONTRACT block(s)" in out, out
+    assert check(tmp_path) == (0, "check_extra: ok\n")
+    # a worker's code below the block, saved with CRLF line endings (and the JS with a BOM)
+    below = {
+        PY: PY_BLOCK
+        + "# a comment\nimport re\n"
+        + PY_CODE
+        + "\n\ndef f() -> str:\n    return ''\n",
+        JS: JS_BLOCK + "\n// a comment after a blank line\nconst A = 'a'; // note\n" + JS_CODE,
+    }
+    for rel, text in below.items():
+        file = tmp_path / "src" / "chatbook" / "features" / rel
+        bom = "\ufeff" if rel == JS else ""
+        file.write_bytes((bom + text).replace("\n", "\r\n").encode("utf-8"))
+    code, out = check(tmp_path)
+    assert code == 0, out
+
+
+# folder -> (stub file, the worker's text (None: deleted), reported line, message)
+CONTRACT_BAD = {
+    "py_deleted": ("handler.py", PY_CODE.lstrip("\n"), 1, "CONTRACT block missing or changed"),
+    "py_edited": ("handler.py", PY_BLOCK.replace("200", "201") + PY_CODE, 5, "or changed"),
+    "py_code_above": ("handler.py", "import re\n" + PY_BLOCK + PY_CODE, 1, "moved below"),
+    "py_moved_down": ("handler.py", PY_CODE.lstrip("\n") + "\n" + PY_BLOCK, 1, "moved below"),
+    "py_file_deleted": ("handler.py", None, 1, "file missing"),
+    "js_deleted": ("ui.js", JS_CODE, 1, "CONTRACT block missing or changed"),
+    "js_edited": ("ui.js", JS_BLOCK.replace("// render", "// x") + JS_CODE, 4, "or changed"),
+    "js_code_above": ("ui.js", "const x = 1;\n" + JS_BLOCK + JS_CODE, 1, "moved below"),
+    "js_extended": ("ui.js", JS_BLOCK + "// my note\n" + JS_CODE, 5, "comment line right after"),
+}
+
+
+def test_a_damaged_contract_block_fails_with_the_text_to_restore(tmp_path: Path) -> None:
+    files: dict[str, str] = {}
+    snapshot: dict[str, list[str]] = {}
+    for folder, (name, text, _, _) in CONTRACT_BAD.items():
+        block = PY_BLOCK if name == "handler.py" else JS_BLOCK
+        snapshot[f"src/chatbook/features/{folder}/{name}"] = block.split("\n")[:-1]
+        if text is not None:
+            files[f"{folder}/{name}"] = text
+    make_tree(tmp_path, files, snapshot=False)
+    write(tmp_path / "tools" / "contracts.json", json.dumps({"files": snapshot}, indent=2))
+    code, out = check(tmp_path)
+    assert code == 1, out
+    assert f"check_extra: {len(CONTRACT_BAD)} problem(s)" in out, out
+    for folder, (name, _, line, message) in CONTRACT_BAD.items():
+        path = f"src/chatbook/features/{folder}/{name}"
+        found = re.search(rf"^{re.escape(path)}:{line}: [^\n]*{message}[^\n]*$", out, re.M)
+        assert found, f"{folder}:\n{out}"
+        block = PY_BLOCK if name == "handler.py" else JS_BLOCK
+        if "moved" in message:
+            assert found.group(0).endswith(CONTRACT_HINT) and "(it starts at line " in out
+        elif "right after" in message:
+            assert "put a blank line or code before your comments" in found.group(0)
+        else:  # missing or changed: the exact text to restore follows
+            assert found.group(0).endswith(CONTRACT_HINT), out
+            shown = f"==== CONTRACT block of {path} ====\n{block}==== end of the CONTRACT block"
+            assert shown in out, f"{folder}:\n{out}"
+
+
+def test_missing_snapshot_fails(tmp_path: Path) -> None:
+    make_tree(tmp_path, {PY: PY_BLOCK + PY_CODE}, snapshot=False)
+    code, out = check(tmp_path)
+    assert code == 1, out
+    assert "tools/contracts.json: not found (fix: staff: run python tools/check_extra.py" in out
+
+
+def load_tool() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("check_extra", REPO / "tools" / "check_extra.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+STALE = (
+    "tools/contracts.json does not match the feature files. Staff who changed a CONTRACT "
+    "block or added a stub: run `python tools/check_extra.py --write-contracts` and review "
+    "`git diff tools/contracts.json`."
+)
+
+
+def test_contract_snapshot_matches_the_feature_files() -> None:
+    """tools/contracts.json covers every feature file and is exactly what --write-contracts
+    makes from them, so staff cannot forget to regenerate it. A file whose block a worker
+    damaged is left to the check_extra gate, which shows the text to restore (one report,
+    not two)."""
+    tool = load_tool()
+    snapshot = tool.load_contracts(REPO)
+    features = REPO / "src" / "chatbook" / "features"
+    files = [*features.glob("*/handler.py"), *features.glob("*/ui.js")]
+    uncovered = sorted(
+        p for p in (f.relative_to(REPO).as_posix() for f in files) if p not in snapshot
+    )
+    damaged = set()
+    for path, block in snapshot.items():
+        file = REPO / path
+        text = file.read_text(encoding="utf-8") if file.is_file() else None
+        if tool.check_contract(path, text, block):
+            damaged.add(path)
+    current = tool.collect_contracts(REPO)
+    paths = (snapshot.keys() | current.keys()) - damaged
+    stale = sorted(p for p in paths if snapshot.get(p) != current.get(p))
+    assert (uncovered, stale) == ([], []), STALE
+    text = (REPO / "tools" / "contracts.json").read_text(encoding="utf-8")
+    assert text == tool.dump_contracts(snapshot), STALE
