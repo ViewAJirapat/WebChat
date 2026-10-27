@@ -1,0 +1,33 @@
+diff --git a/src/chatbook/features/page_group_new/ui.js b/src/chatbook/features/page_group_new/ui.js
+index 025854f..ff1c926 100644
+--- a/src/chatbook/features/page_group_new/ui.js
++++ b/src/chatbook/features/page_group_new/ui.js
+@@ -16,5 +16,27 @@
+ // Server answer of POST /api/groups: {conversation: C}.
+ CB.page('group_new', {
+   title: 'New group',
+-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
++  load: async () => await CB.api('GET', '/api/friends'),
++  render: (d) =>
++    d.friends.length === 0
++      ? CB.el('p', {class: 'muted'}, 'Add friends first')
++      : CB.form({
++          fields: [
++            {name: 'title', label: 'Group name'},
++            {
++              name: 'members',
++              label: 'Members',
++              type: 'checkboxes',
++              options: d.friends.map((f) => ({value: String(f.id), label: f.display_name})),
++            },
++          ],
++          submit: 'Create group',
++          onsubmit: async (v) => {
++            const r = await CB.api('POST', '/api/groups', {
++              title: v.title,
++              member_ids: v.members.map(Number),
++            });
++            CB.go('chat', {id: r.conversation.id});
++          },
++        }),
+ });

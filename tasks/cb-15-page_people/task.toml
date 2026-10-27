@@ -1,0 +1,49 @@
+title = "People search page: search people and act on each result"
+type = "feat"
+files = ["src/chatbook/features/page_people/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_people/**"]
+prompt = """
+Implement the page `people` in `src/chatbook/features/page_people/ui.js`. The file is a stub:
+keep its CONTRACT comment and its `CB.page('people', ...)` call with `title: 'People'`,
+`nav: 'People'` and `order: 30`, and replace the stub body with `load` and `render` below.
+Reference: docs/ui.md (read-only).
+
+CB.page('people', {title: 'People', nav: 'People', order: 30, load, render})
+load(params): q = (params.q || '').trim()
+  if q === '' -> return {q: '', users: null}
+  r = await CB.api('GET', '/api/users' + CB.qs({q}));  return {q, users: r.users}
+render(d) -> CB.el('div', {class: 'stack'},
+  CB.form({fields: [{name: 'q', label: 'Search people', value: d.q}], submit: 'Search',
+           onsubmit: (v) => CB.go('people', {q: v.q.trim()})}),
+  d.users === null      -> CB.el('p', {class: 'muted'}, 'Search by name or username')
+  d.users.length === 0  -> CB.el('p', {class: 'muted'}, 'No people found')
+  otherwise             -> d.users.map(row))
+row(u) = CB.el('div', {class: 'item'}, CB.avatar(u), CB.userLink(u),
+                CB.el('span', {class: 'muted'}, '@' + u.username), action(u))
+action(u) by u.relationship:
+  'none'             -> CB.el('button', {testid: 'add-' + u.id, onclick: async () => {
+                          await CB.api('POST', '/api/friends/requests', {user_id: u.id});
+                          CB.toast('Request sent'); CB.refresh(); }}, 'Add friend')
+  'request_sent'     -> CB.el('button', {disabled: true}, 'Requested')
+  'request_received' -> CB.el('button', {onclick: () => CB.go('friends')}, 'Respond')
+  'friends'          -> CB.el('button', {testid: 'message-' + u.id, onclick: async () => {
+                          const r = await CB.api('POST', '/api/dm', {user_id: u.id});
+                          CB.go('chat', {id: r.conversation.id}); }}, 'Message')
+Server answers: GET /api/users -> {users: [{id, username, display_name, relationship}]};
+POST /api/dm -> {conversation: {id, ...}}.
+
+Details:
+- When `params.q` is missing or whitespace-only after `.trim()`, `load` returns
+  `{q: '', users: null}` without calling `CB.api`, and `render` shows the search form (with
+  `value: ''`) followed by `<p class="muted">Search by name or username</p>`.
+- When `q` is non-empty, `load` calls `GET /api/users` with `CB.qs({q})` and returns
+  `{q, users: r.users}`. The form field `q` has `value: d.q`.
+- Submitting the form calls `CB.go('people', {q: v.q.trim()})`.
+- Each user row in `d.users` is a `<div class="item">` containing, in order: `CB.avatar(u)`,
+  `CB.userLink(u)`, `<span class="muted">@<username></span>`, and the relationship action
+  button.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, labels, field names, testids, button labels, request bodies and element order must
+match exactly; error message texts are not tested.
+"""

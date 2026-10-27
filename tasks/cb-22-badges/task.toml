@@ -1,0 +1,31 @@
+title = "Nav badge service: poll /api/updates for inbox and friend request counts"
+type = "feat"
+files = ["src/chatbook/features/badges/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/badges/**"]
+prompt = """
+Implement the background badge service in `src/chatbook/features/badges/ui.js`. The file is a
+stub: keep its CONTRACT comment and its top-level `CB.every(5000, ...)` call (do not register a
+page), and replace the empty callback body with the implementation below.
+Reference: docs/ui.md (read-only).
+
+No page. At the top level of the file:
+CB.every(5000, async () => {
+  const u = await CB.api('GET', '/api/updates');
+  CB.badge('inbox', u.unread_total);
+  CB.badge('friends', u.friend_requests);
+});
+Server answer: {unread_total, unread_conversations, friend_requests}.
+
+Details:
+- Do not call `CB.page`: this feature is a background service only.
+- Call `CB.every(5000, async () => { ... })` at the top level of the file. `CB.every` runs the
+  callback immediately when logged in and every 5000 ms thereafter (and does not run when logged
+  out).
+- On each run, fetch `GET /api/updates` and pass `u.unread_total` to `CB.badge('inbox', ...)`
+  and `u.friend_requests` to `CB.badge('friends', ...)` (even when the count is 0, since
+  `CB.badge` hides non-positive badges itself).
+- Do not use `u.unread_conversations` for the `'inbox'` badge; use `u.unread_total`.
+- Never write `try/catch`; `CB.api` handles error responses itself.
+
+Badge names, API path and interval must match; error message texts are not tested.
+"""

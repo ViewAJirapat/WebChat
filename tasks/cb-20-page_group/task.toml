@@ -1,0 +1,55 @@
+title = "Group settings page: rename, members, add a friend, leave"
+type = "feat"
+files = ["src/chatbook/features/page_group/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_group/**"]
+prompt = """
+Implement the page `group` in `src/chatbook/features/page_group/ui.js`. The file is a stub:
+keep its CONTRACT comment and its `CB.page('group', ...)` call with `title: 'Group settings'`
+(no nav, no order, no public, no poll), and replace the stub body with `load` and `render`
+below.
+Reference: docs/ui.md (read-only).
+
+CB.page('group', {title: 'Group settings', load, render})           no nav
+load(params):
+  const c = (await CB.api('GET', '/api/conversations/' + params.id)).conversation
+  if (c.kind !== 'group') return {c, friends: []}
+  const f = await CB.api('GET', '/api/friends');  return {c, friends: f.friends}
+render(d, params) -> d.c.kind !== 'group' ? CB.el('p', {class: 'muted'}, 'Not a group')
+ : CB.el('div', {class: 'stack'}, in this order:
+  CB.el('div', {class: 'row'}, CB.el('h2', {}, d.c.title),
+        CB.el('button', {onclick: () => CB.go('chat', {id: params.id})}, 'Back to chat')),
+  CB.form({fields: [{name: 'title', label: 'Group name', value: d.c.title}], submit: 'Rename',
+           onsubmit: async (v) => {
+             await CB.api('PUT', '/api/groups/' + params.id, {title: v.title});
+             CB.toast('Renamed'); CB.refresh(); }}),
+  CB.el('h3', {}, 'Members (' + d.c.members.length + ')'),
+  d.c.members.map((m) => CB.el('div', {class: 'item'}, CB.avatar(m), CB.userLink(m))),
+  candidates.length ? CB.form({fields: [{name: 'user_id', label: 'Add a friend', type: 'select',
+        options: candidates.map((f) => ({value: String(f.id), label: f.display_name}))}],
+      submit: 'Add',
+      onsubmit: async (v) => {
+        await CB.api('POST', '/api/groups/' + params.id + '/members', {user_id: Number(v.user_id)});
+        CB.refresh(); }}) : null,
+  CB.el('button', {class: 'danger', onclick: async () => {
+      await CB.api('DELETE', '/api/groups/' + params.id + '/members/me');
+      CB.go('inbox'); }}, 'Leave group'))
+candidates = d.friends that are not in d.c.members (compare ids)
+Server answers: GET /api/conversations/{id} -> {conversation: C, reads};
+  GET /api/friends -> {friends: [U]}.
+
+Details:
+- `load(params)` fetches `GET /api/conversations/` + `params.id`. If `c.kind !== 'group'`,
+  return `{c, friends: []}` immediately without calling `GET /api/friends` and `render`
+  shows `<p class="muted">Not a group</p>`.
+- For a group conversation, `load(params)` also fetches `GET /api/friends` and returns
+  `{c, friends: f.friends}`.
+- `candidates` are the entries of `d.friends` whose `id` is not in `d.c.members` (in their
+  `d.friends` order). When `candidates.length` is `0`, omit the `'Add'` form (`null`).
+- Submitting `'Add'` converts `v.user_id` with `Number(v.user_id)` and calls `CB.refresh()`.
+- Submitting `'Rename'` calls `PUT /api/groups/` + `params.id` with `{title: v.title}`,
+  toasts `'Renamed'`, and calls `CB.refresh()`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, headings, labels, field names, button labels, request paths/bodies and element order
+must match exactly; error message texts are not tested.
+"""

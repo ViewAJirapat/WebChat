@@ -1,0 +1,57 @@
+title = "Chat history: paginated message history"
+type = "feat"
+files = [
+  "src/chatbook/features/chat_history/handler.py",
+  "docs/api/base.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/chat_history/**"]
+prompt = """
+Implement the feature `chat_history` in `src/chatbook/features/chat_history/handler.py`. The
+file is a stub: keep its CONTRACT docstring, its @route line and the function name
+`list_messages`, and replace `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Imports, all from chatbook.core.api: Request, Response, message_json, path_id, query_int,
+query_opt_int, require_member, route. HTTPError is then unused: remove it from the import
+line (ruff fails on an unused import).
+
+GET /api/conversations/{id}/messages?limit=&before=          function list_messages
+Checks in this order (the first failing check decides the status):
+  1. cid = path_id(request)                 (a bad or missing id raises 404 itself)
+     require_member(db, cid, me)            (raises 404 itself if the conversation does not
+                                             exist or me is not a member, e.g. me left it)
+  2. limit = query_int(request, "limit", default=50, lo=1, hi=200)
+     (raises 400 itself when "limit" is present and not an integer in 1..200; when missing or
+     empty, returns 50)
+  3. before = query_opt_int(request, "before")
+     (raises 400 itself when "before" is present and not a non-negative integer; when missing
+     or empty, returns None; before=0 is valid and returns 0)
+     cursor = before if before is not None else 2**62
+  4. rows, more = db.page("SELECT * FROM messages WHERE conversation_id = ? AND id < ?"
+                          " ORDER BY id DESC", cid, cursor, limit=limit)
+     (adjacent string literals or one string literal, never + or f-strings; db.page adds LIMIT
+     itself and returns up to `limit` newest messages with id < cursor plus a bool `more`)
+  5. rows.reverse()                         (oldest first inside the returned page)
+  -> 200 {"messages": [message_json(db, r) for r in rows], "has_more": more}
+
+Each item of "messages" is built with message_json(db, r) (shape M:
+{"id", "conversation_id", "sender": U, "body", "created_at"}); never build M by hand.
+Pagination walks backward from the newest message (`ORDER BY id DESC` with `id < cursor` and
+`db.page`), then reverses the slice so every page is returned in ascending `id` order (oldest
+first). `has_more` is True iff older messages with `id < cursor` exist in this conversation
+beyond the returned `limit` rows.
+Example: a conversation has message ids [10, 12, 15, 18, 20].
+- Default (`limit` and `before` omitted): messages [10, 12, 15, 18, 20], `has_more` False.
+- `?limit=2`: the 2 newest messages in ascending order [18, 20], `has_more` True.
+- `?before=15`: all messages before 15 in ascending order [10, 12], `has_more` False.
+- `?before=18&limit=1`: [15], `has_more` True.
+- `?before=10` or `?before=0` or a conversation with no messages: [], `has_more` False.
+Both direct and group conversations are supported; there is no friendship check on reading
+history, only current membership (`require_member`).
+
+Read-only: this route does not write to any table (no INSERT, UPDATE or DELETE; do not mark
+messages read).
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""
