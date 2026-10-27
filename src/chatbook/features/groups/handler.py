@@ -19,14 +19,49 @@ Tables you may write: conversations.title; conversations and members only throug
 create_conversation.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import (
+    HTTPError,
+    Request,
+    Response,
+    are_friends,
+    body_ids,
+    body_str,
+    conversation_json,
+    create_conversation,
+    path_id,
+    require_member,
+    require_user,
+    route,
+)
 
 
 @route("POST", "/api/groups")
 def create_group(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    title = body_str(request, "title", max_len=50)
+    ids = [i for i in body_ids(request, "member_ids") if i != request.me.id]
+
+    if not ids:
+        raise HTTPError(400, "No members provided")
+    if len(ids) > 49:
+        raise HTTPError(400, "Too many members")
+
+    for uid in ids:
+        require_user(request.db, uid)
+        if not are_friends(request.db, request.me.id, uid):
+            raise HTTPError(403, "Not friends with all members")
+
+    cid = create_conversation(request.db, "group", title, request.me.id, ids, request.now)
+    return Response(201, {"conversation": conversation_json(request.db, cid, request.me.id)})
 
 
 @route("PUT", "/api/groups/{id}")
 def rename_group(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    cid = path_id(request)
+    conv = require_member(request.db, cid, request.me.id)
+
+    if conv["kind"] != "group":
+        raise HTTPError(400, "Cannot rename a direct conversation")
+
+    title = body_str(request, "title", max_len=50)
+    request.db.run("UPDATE conversations SET title = ? WHERE id = ?", title, cid)
+    return Response(200, {"conversation": conversation_json(request.db, cid, request.me.id)})
