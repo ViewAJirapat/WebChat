@@ -14,14 +14,33 @@ DELETE /api/friends/{id}
 Tables you may write: friendships only through unfriend.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import (
+    HTTPError,
+    Request,
+    Response,
+    are_friends,
+    path_id,
+    route,
+    unfriend,
+    user_json,
+)
 
 
 @route("GET", "/api/friends")
 def list_friends(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    rows = request.db.all(
+        "SELECT u.* FROM friendships f JOIN users u ON u.id = f.friend_id WHERE f.user_id = ?",
+        request.me.id,
+    )
+    rows.sort(key=lambda row: (str(row["display_name"]).casefold(), int(row["id"])))
+    friends = [user_json(r) for r in rows]
+    return Response(200, {"friends": friends})
 
 
 @route("DELETE", "/api/friends/{id}")
 def remove_friend(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    uid = path_id(request)
+    if not are_friends(request.db, request.me.id, uid):
+        raise HTTPError(404, "not a friend")
+    unfriend(request.db, request.me.id, uid)
+    return Response(200, {"removed": uid})
