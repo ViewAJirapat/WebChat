@@ -16,5 +16,26 @@
 // Server answer of POST /api/groups: {conversation: C}.
 CB.page('group_new', {
   title: 'New group',
-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+  load: async () => {
+    return await CB.api('GET', '/api/friends');
+  },
+  render: (data) => {
+    if (data.friends.length === 0) {
+      return CB.el('p', {class: 'muted'}, 'Add friends first');
+    } else {
+      return CB.form({
+        fields: [
+          {name: 'title', label: 'Group name'},
+          {name: 'members', label: 'Members', type: 'checkboxes',
+           options: data.friends.map((f) => ({value: String(f.id), label: f.display_name}))}
+        ],
+        submit: 'Create group',
+        onsubmit: async (v) => {
+          const r = await CB.api('POST', '/api/groups',
+                                 {title: v.title, member_ids: v.members.map(Number)});
+          CB.go('chat', {id: r.conversation.id});
+        }
+      });
+    }
+  }
 });
