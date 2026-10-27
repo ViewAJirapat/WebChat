@@ -370,6 +370,187 @@ def test_missing_snapshot_fails(tmp_path: Path) -> None:
     assert "tools/contracts.json: not found (fix: staff: run python tools/check_extra.py" in out
 
 
+# --restore-contracts (the harness autofix step, 3.16 item 6): folder -> (stub file, the
+# worker's text, the text after restoring; None: left exactly as it is).
+PY_TOP = PY_CODE.lstrip("\n")  # the stub's code without the blank line after the block
+FUTURE = "from __future__ import annotations\n"
+RESTORED_0 = "restore-contracts: 0 CONTRACT block(s) restored\n"
+RESTORE = {
+    # the block deleted without a trace: put back on top, one blank line after it
+    "py_deleted": ("handler.py", PY_TOP, PY_BLOCK + PY_CODE),
+    "py_blank_first": ("handler.py", "\n\n" + PY_TOP, PY_BLOCK + PY_CODE),
+    # the block replaced by a docstring of the worker's own: the block takes its place
+    "py_own_docstring": ("handler.py", '"""Demo handlers."""\n' + PY_CODE, PY_BLOCK + PY_CODE),
+    "py_comment_then_docstring": (
+        "handler.py",
+        "# my note\n'''Demo\nhandlers.'''  # trailing\n" + PY_CODE,
+        PY_BLOCK + "\n# my note\n" + PY_CODE,
+    ),
+    # `from __future__` stays the first statement after the docstring
+    "py_future": ("handler.py", FUTURE + PY_CODE, PY_BLOCK + "\n" + FUTURE + PY_CODE),
+    "py_docstring_future": (
+        "handler.py",
+        '"""Demo.\n\nMore text.\n"""\n\n' + FUTURE + PY_CODE,
+        PY_BLOCK + "\n" + FUTURE + PY_CODE,
+    ),
+    # code that does not compile still gets its block (the other gates report the code)
+    "py_broken": ("handler.py", PY_TOP + "def broken(:\n", PY_BLOCK + PY_CODE + "def broken(:\n"),
+    "js_deleted": ("ui.js", JS_CODE, JS_BLOCK + "\n" + JS_CODE),
+    "js_own_comment": (
+        "ui.js",
+        "\n// my page\n\n" + JS_CODE,
+        JS_BLOCK + "\n// my page\n\n" + JS_CODE,
+    ),
+    # a block that left a trace (its first line or the word CONTRACT) is edited or moved:
+    # left alone for the gate, which shows the text to restore
+    "py_ok": ("handler.py", PY_BLOCK + PY_CODE, None),
+    "py_edited": ("handler.py", PY_BLOCK.replace("200", "201") + PY_CODE, None),
+    "py_first_line_edited": ("handler.py", PY_BLOCK.replace("one route", "x") + PY_CODE, None),
+    "py_only_first_line_left": ("handler.py", '"""demo: one route."""\n' + PY_CODE, None),
+    "py_moved_down": ("handler.py", PY_TOP + "\n" + PY_BLOCK, None),
+    "py_code_above": ("handler.py", "import re\n" + PY_BLOCK + PY_CODE, None),
+    "py_noted": ("handler.py", "# the CONTRACT said so\n" + PY_CODE, None),
+    # a string that opens the file but is not a statement of its own
+    "py_shared_line": ("handler.py", '"""Demo."""; import re\n' + PY_CODE, None),
+    "js_edited": ("ui.js", JS_BLOCK.replace("// render", "// x") + JS_CODE, None),
+    "js_extended": ("ui.js", JS_BLOCK + "// my note\n" + JS_CODE, None),
+    "js_code_above": ("ui.js", "const x = 1;\n" + JS_BLOCK + JS_CODE, None),
+}
+
+
+def contract_tree(root: Path, files: dict[str, tuple[str, str | None]]) -> dict[str, str]:
+    """A tree whose snapshot lists each folder's stub file (folder -> (file name, text; None:
+    deleted)); returns folder -> the stub's repo path."""
+    paths = {
+        folder: f"src/chatbook/features/{folder}/{name}" for folder, (name, _) in files.items()
+    }
+    snapshot = {
+        paths[folder]: (PY_BLOCK if name == "handler.py" else JS_BLOCK).split("\n")[:-1]
+        for folder, (name, _) in files.items()
+    }
+    make_tree(
+        root,
+        {f"{f}/{name}": text for f, (name, text) in files.items() if text is not None},
+        snapshot=False,
+    )
+    write(root / "tools" / "contracts.json", json.dumps({"files": snapshot}, indent=2))
+    return paths
+
+
+def test_restore_puts_back_only_a_block_deleted_without_a_trace(tmp_path: Path) -> None:
+    files: dict[str, tuple[str, str | None]] = {f: (n, t) for f, (n, t, _) in RESTORE.items()}
+    extra: dict[str, tuple[str, str | None]] = {
+        "py_not_utf8": ("handler.py", None),  # written as bytes below
+        "py_file_deleted": ("handler.py", None),
+    }
+    paths = contract_tree(tmp_path, files | extra)
+    feature = tmp_path / "src" / "chatbook" / "features"
+    latin1 = b"# caf\xe9\n" + PY_TOP.encode()
+    (feature / "py_not_utf8").mkdir()
+    (feature / "py_not_utf8" / "handler.py").write_bytes(latin1)
+    before = {f: (tmp_path / p).read_bytes() for f, p in paths.items() if f in RESTORE}
+    code, out = check(tmp_path, None, "--restore-contracts")
+    assert code == 0, out
+    restored = [f for f, (_, _, after) in RESTORE.items() if after is not None]
+    assert f"restore-contracts: {len(restored)} CONTRACT block(s) restored" in out, out
+    for folder, (_, _, after) in RESTORE.items():
+        path = paths[folder]
+        text = (tmp_path / path).read_bytes().decode("utf-8")
+        if after is None:
+            assert text.encode() == before[folder], f"{folder} was changed:\n{text}"
+            assert f"restored the CONTRACT block at the top of {path}" not in out, out
+            assert (f"left {path}: " in out) == (folder != "py_ok"), f"{folder}:\n{out}"
+        else:
+            assert text == after, f"{folder}:\n{text}"
+            assert f"restored the CONTRACT block at the top of {path}" in out, out
+            if path.endswith(".py") and folder != "py_broken":
+                compile(text, path, "exec", dont_inherit=True)
+    assert "py_own_docstring/handler.py in place of the file's own 1-line docstring" in out, out
+    assert f"left {paths['py_edited']}: part of its CONTRACT block is still there" in out, out
+    assert f"left {paths['py_shared_line']}: the string that opens it is not a" in out, out
+    assert (feature / "py_not_utf8" / "handler.py").read_bytes() == latin1
+    assert f"left {paths['py_not_utf8']}: not UTF-8 text" in out, out
+    assert f"left {paths['py_file_deleted']}: file missing" in out, out
+    assert not (feature / "py_file_deleted").exists()  # a deleted file is not made up
+    # idempotent: a second run changes nothing
+    after_first = {f: (tmp_path / p).read_bytes() for f, p in paths.items() if f in RESTORE}
+    code, again = check(tmp_path, None, "--restore-contracts")
+    assert code == 0 and "restore-contracts: 0 CONTRACT block(s) restored" in again, again
+    assert after_first == {f: (tmp_path / p).read_bytes() for f, p in paths.items() if f in RESTORE}
+    # the gate passes every restored file and still reports every file left alone
+    code, gate = check(tmp_path)
+    assert code == 1, gate
+    for folder, (_, _, after) in RESTORE.items():
+        reported = re.search(rf"^{re.escape(paths[folder])}:\d+: [^\n]*CONTRACT", gate, re.M)
+        assert bool(reported) == (after is None and folder != "py_ok"), f"{folder}:\n{gate}"
+    # a file the gate cannot decode is reported, not a crash on its U+FFFD (cp874 console)
+    assert f"{paths['py_not_utf8']}:1: CONTRACT block missing" in gate, gate
+    assert gate.endswith(" problem(s)\n"), gate
+
+
+def test_restore_keeps_line_endings_and_byte_order_mark(tmp_path: Path) -> None:
+    worker = {"crlf": ("handler.py", PY_TOP), "bom_crlf": ("ui.js", JS_CODE)}
+    paths = contract_tree(tmp_path, {f: (n, "x") for f, (n, _) in worker.items()})
+    for folder, (_, text) in worker.items():
+        bom = "\ufeff" if folder == "bom_crlf" else ""
+        (tmp_path / paths[folder]).write_bytes((bom + text.replace("\n", "\r\n")).encode())
+    code, out = check(tmp_path, None, "--restore-contracts")
+    assert code == 0 and "2 CONTRACT block(s) restored" in out, out
+    want = {
+        "crlf": (PY_BLOCK + PY_CODE).replace("\n", "\r\n").encode(),
+        "bom_crlf": ("\ufeff" + (JS_BLOCK + "\n" + JS_CODE).replace("\n", "\r\n")).encode(),
+    }
+    assert {f: (tmp_path / p).read_bytes() for f, p in paths.items()} == want
+    assert check(tmp_path) == (0, "check_extra: ok\n")
+
+
+def test_restore_then_ruff_passes_the_gates(tmp_path: Path) -> None:
+    """The autofix order of harness/swarm.toml: --restore-contracts, then ruff's fixer and
+    formatter, which fix the spacing below the block and never change the block itself."""
+    files: dict[str, tuple[str, str | None]] = {
+        "starts_with_def": ("handler.py", "def demo() -> int:\n    return 1\n"),
+        "own_doc_future": ("handler.py", '"""Mine."""\n' + FUTURE + PY_CODE),
+    }
+    paths = contract_tree(tmp_path, files)
+    write(tmp_path / "pyproject.toml", (REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    autofix = [
+        ["tools/check_extra.py", "--restore-contracts"],
+        ["-m", "ruff", "check", "--fix", "--exit-zero", "--quiet", "src"],
+        ["-m", "ruff", "format", "--quiet", "src"],
+    ]
+    for args in autofix:
+        subprocess.run([sys.executable, *args], cwd=str(tmp_path), timeout=120, check=True)
+    assert check(tmp_path) == (0, "check_extra: ok\n")
+    for args in (["check", "src"], ["format", "--check", "src"]):
+        proc = subprocess.run(
+            [sys.executable, "-m", "ruff", *args],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+    for path in paths.values():
+        assert (tmp_path / path).read_text(encoding="utf-8").startswith(PY_BLOCK + "\n")
+
+
+def test_restore_without_a_snapshot_or_with_odd_paths_changes_nothing(tmp_path: Path) -> None:
+    make_tree(tmp_path, {PY: PY_TOP}, snapshot=False)
+    code, out = check(tmp_path, None, "--restore-contracts")
+    assert (code, out) == (0, "tools/contracts.json: not found (nothing restored)\n")
+    odd = ["tools/check_extra.py", "src/chatbook/features/../../x.py", "src/chatbook/core/api.py"]
+    block = PY_BLOCK.split("\n")[:-1]
+    write(tmp_path / "tools" / "contracts.json", json.dumps({"files": dict.fromkeys(odd, block)}))
+    tool = (tmp_path / "tools" / "check_extra.py").read_bytes()
+    code, out = check(tmp_path, None, "--restore-contracts")
+    assert code == 0 and out.endswith(RESTORED_0), out
+    for path in odd:
+        assert f"left {path}: not a features/<name>/handler.py or ui.js path" in out, out
+    assert (tmp_path / "tools" / "check_extra.py").read_bytes() == tool
+    assert not (tmp_path / "x.py").exists()
+
+
 def load_tool() -> ModuleType:
     spec = importlib.util.spec_from_file_location("check_extra", REPO / "tools" / "check_extra.py")
     assert spec is not None and spec.loader is not None
@@ -380,7 +561,13 @@ def load_tool() -> ModuleType:
 
 STALE = (
     "tools/contracts.json does not match the feature files. Staff who changed a CONTRACT "
-    "block or added a stub: run `python tools/check_extra.py --write-contracts` and review "
+    "block, added a stub or removed one: run `python tools/check_extra.py --write-contracts` "
+    "and review `git diff tools/contracts.json`."
+)
+UNCOVERED = (
+    "feature file(s) {paths} are not in tools/contracts.json. Workers: do not add a new "
+    "handler.py or ui.js; delete it and write your code in the stub file your task names. "
+    "Staff who added a stub: run `python tools/check_extra.py --write-contracts` and review "
     "`git diff tools/contracts.json`."
 )
 
@@ -403,9 +590,10 @@ def test_contract_snapshot_matches_the_feature_files() -> None:
         text = file.read_text(encoding="utf-8") if file.is_file() else None
         if tool.check_contract(path, text, block):
             damaged.add(path)
+    assert uncovered == [], UNCOVERED.format(paths=", ".join(uncovered))
     current = tool.collect_contracts(REPO)
     paths = (snapshot.keys() | current.keys()) - damaged
     stale = sorted(p for p in paths if snapshot.get(p) != current.get(p))
-    assert (uncovered, stale) == ([], []), STALE
+    assert stale == [], STALE
     text = (REPO / "tools" / "contracts.json").read_text(encoding="utf-8")
     assert text == tool.dump_contracts(snapshot), STALE

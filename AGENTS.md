@@ -33,6 +33,7 @@ everything passes. The task names the one feature folder you may change.
 - Plain JavaScript. Use only `CB.*` (docs/ui.md) and JS built-ins. The gate rejects document,
   window, fetch, innerHTML, setTimeout, setInterval, classList, style, addEventListener,
   import and require.
+- Leave a blank line after the CONTRACT comment: a `//` line right below it fails the gate.
 - A page is `CB.page(name, {title, nav, order, load, render, poll})`: `load` fetches with
   `CB.api`, `render` returns nodes built with `CB.el` and `CB.form`.
 - After a change (send, accept, like) call `CB.refresh()` or `CB.go(...)`.

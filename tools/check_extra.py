@@ -7,9 +7,16 @@ Prints `path:line: problem (fix: hint)` for every problem and exits 1 if there i
 Standard library only.
 
 The CONTRACT blocks are kept in tools/contracts.json (protected, like all of tools/). Staff
-who change a stub's CONTRACT block or add a stub regenerate it from the feature files with
+who change a stub's CONTRACT block, add a stub or remove one regenerate it from the feature
+files with
   python tools/check_extra.py --write-contracts [root]
 and review `git diff tools/contracts.json` before committing.
+
+The harness runs, as an autofix step before the gates,
+  python tools/check_extra.py --restore-contracts [root]
+which puts a CONTRACT block back at the top of its file when the block is gone without a
+trace (a deleted block); an edited or moved block is left for the gate to report. It always
+exits 0.
 """
 
 from __future__ import annotations
@@ -38,6 +45,9 @@ CONTRACTS = "tools/contracts.json"
 CONTRACT_HINT = "restore it verbatim at the top of the file, then put your code below it"
 EXTENDED_HINT = "leave the CONTRACT block as it is; put a blank line or code before your comments"
 REGEN_HINT = "staff: run python tools/check_extra.py --write-contracts on the frame"
+# The only paths --restore-contracts writes to, whatever the snapshot lists.
+FEATURE_FILE = re.compile(r"src/chatbook/features/[A-Za-z0-9_]+/(?:handler\.py|ui\.js)")
+KEPT_NOTE = "part of its CONTRACT block is still there (edited or moved: the gate reports it)"
 CONTRACTS_ABOUT = (
     "The CONTRACT block each feature file must begin with, one string per line. Checked by "
     "tools/check_extra.py; made by `python tools/check_extra.py --write-contracts`. "
@@ -466,6 +476,124 @@ def write_contracts(root: Path) -> str:
     return "\n".join(report)
 
 
+def _traces(block: str) -> list[str]:
+    """Text that only a copy of `block` would put in a file: its first line without the //
+    or the docstring quotes, and the word CONTRACT. Not any block line: blocks hold
+    pseudo-code (`uid = path_id(request)`) that workers copy into their code verbatim."""
+    first = block.split("\n", 1)[0].strip().lstrip("/").strip().strip("\"'").strip()
+    return [t for t in (first, "CONTRACT") if t]
+
+
+def _opening_docstring(text: str) -> tuple[int, int] | None:
+    """First and last line of the string statement a Python module opens with (its
+    docstring); None if the module opens with anything else. ValueError when a string opens
+    it but is not a statement of its own (`"..." + x`, `"..."; import re`) or does not
+    tokenize."""
+    start = 0
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(text).readline):
+            if token.type in (tokenize.COMMENT, tokenize.NL):
+                continue
+            if token.type == tokenize.STRING:
+                start = start or token.start[0]
+                continue
+            if start and token.type == tokenize.NEWLINE:
+                return start, token.start[0]
+            if start:
+                raise ValueError("the string that opens it is not a statement of its own")
+            return None
+    except (tokenize.TokenError, SyntaxError) as exc:
+        raise ValueError(f"cannot read its first statement: {exc}") from exc
+    return None
+
+
+def _compiles(path: str, text: str) -> bool:
+    try:
+        compile(text, path, "exec", dont_inherit=True)  # compiles only; nothing runs
+    except Exception:  # any reason at all counts as "does not compile"
+        return False
+    return True
+
+
+def restore_contract(path: str, raw: bytes, block: str) -> tuple[bytes | None, str]:
+    """The bytes of a feature file with its deleted CONTRACT block put back at the top, and a
+    note; (None, why) when the file is left as it is (why is "" when the block is in place).
+
+    Only a block gone without a trace is put back: a file that still holds the block's first
+    line or the word CONTRACT has an edited or moved block, which the gate reports. A
+    handler.py's block is its module docstring: if the file opens with a docstring of its own,
+    the block takes its place (kept below the block, that docstring would be a plain string
+    before the imports, which ruff rejects as E402), so `from __future__` imports stay first
+    after the docstring. A ui.js block is followed by one blank line. The file keeps its
+    byte-order mark and the line ending of its first line."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, "not UTF-8 text"
+    if not check_contract(path, text, block):
+        return None, ""
+    body = _normalise(text)
+    if any(trace in body for trace in _traces(block)):
+        return None, KEPT_NOTE
+    lines = body.split("\n")
+    note = ""
+    if path.endswith(".py"):
+        try:
+            opening = _opening_docstring(body)
+        except ValueError as exc:
+            return None, str(exc)
+        if opening is not None:
+            first, last = opening
+            del lines[first - 1 : last]
+            note = f" in place of the file's own {last - first + 1}-line docstring"
+    while lines and not lines[0].strip():
+        del lines[0]
+    rest = "\n".join(lines)
+    new = block + ("\n" + rest if rest else "")
+    if check_contract(path, new, block):
+        return None, "the block could not be put back"  # cannot happen; never write it
+    if path.endswith(".py") and _compiles(path, body) and not _compiles(path, new):
+        return None, "with the block put back the file would not compile"
+    first_break = text.find("\n")
+    newline = "\r\n" if first_break > 0 and text[first_break - 1] == "\r" else "\n"
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
+    return (bom + new.replace("\n", newline)).encode("utf-8"), note
+
+
+def restore_contracts(root: Path) -> list[str]:
+    """Autofix: put back every CONTRACT block of tools/contracts.json that is gone from its
+    file without a trace (see restore_contract). Writes only features/<name>/handler.py and
+    ui.js files that exist; running it again changes nothing."""
+    try:
+        blocks = load_contracts(root)
+    except ValueError as exc:
+        return [f"{CONTRACTS}: {exc} (nothing restored)"]
+    report: list[str] = []
+    restored = 0
+    for path, block in sorted(blocks.items()):
+        file = root / path
+        if not FEATURE_FILE.fullmatch(path):
+            report.append(f"left {path}: not a features/<name>/handler.py or ui.js path")
+            continue
+        if not file.is_file():
+            report.append(f"left {path}: file missing (the gate reports it)")
+            continue
+        try:
+            new, note = restore_contract(path, file.read_bytes(), block)
+            if new is not None:
+                file.write_bytes(new)
+        except OSError as exc:
+            report.append(f"left {path}: {exc}")
+            continue
+        if new is not None:
+            restored += 1
+            report.append(f"restored the CONTRACT block at the top of {path}{note}")
+        elif note:
+            report.append(f"left {path}: {note}")
+    report.append(f"restore-contracts: {restored} CONTRACT block(s) restored")
+    return report
+
+
 def run(root: Path) -> list[str]:
     """All problems under the repo root, in a stable order."""
     package = root / "src" / "chatbook"
@@ -492,15 +620,22 @@ def run(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The harness reads this output through a pipe in the locale's code page (cp874 here):
+    # a character it lacks (a worker's non-ASCII text, U+FFFD) must not crash the report.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(errors="backslashreplace")
     args = sys.argv[1:] if argv is None else argv
-    write = args[:1] == ["--write-contracts"]
-    args = args[1:] if write else args
+    mode = args[0] if args[:1] in (["--write-contracts"], ["--restore-contracts"]) else ""
+    args = args[1:] if mode else args
     root = Path(args[0]) if args else Path.cwd()
-    if write:
+    if mode:
+        restore = mode == "--restore-contracts"
         if not (root / "src" / "chatbook" / "features").is_dir():
             print(f"{root.as_posix()}: no src/chatbook/features here (fix: run from the repo root)")
-            return 1
-        print(write_contracts(root.resolve()))
+            return 0 if restore else 1  # restoring is an autofix step: it never fails
+        root = root.resolve()
+        print("\n".join(restore_contracts(root)) if restore else write_contracts(root))
         return 0
     problems = run(root.resolve())
     for line in problems:
