@@ -30,5 +30,43 @@
 //   GET .../messages -> {messages: [M], has_more}; POST .../messages -> {message: M}.
 CB.page('chat', {
   title: 'Chat',
-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+  poll: 2000,
+  load: async (params) => {
+    const limit = Number(params.limit || 50);
+    const d = await CB.api('GET', '/api/conversations/' + params.id);
+    const h = await CB.api('GET', '/api/conversations/' + params.id + '/messages' + CB.qs({limit}));
+    if (d.conversation.unread > 0) await CB.api('POST', '/api/conversations/' + params.id + '/read');
+    return { conv: d.conversation, reads: d.reads, messages: h.messages, hasMore: h.has_more, limit };
+  },
+  render: (d, params) => {
+    const row = (m) => CB.el('div', { class: m.sender.id === CB.me.id ? 'msg mine' : 'msg' }, CB.avatar(m.sender),
+      CB.el('b', {}, m.sender.display_name), ': ', m.body, ' ',
+      CB.el('small', { class: 'muted' }, CB.time(m.created_at)));
+
+    const seen = (d) => {
+      const mine = d.messages.filter(m => m.sender.id === CB.me.id);
+      if (mine.length === 0) return false;
+      const last = mine[mine.length - 1].id;
+      return d.reads.some(r => r.user_id !== CB.me.id && r.last_read_id >= last);
+    };
+
+    return CB.el('div', { class: 'stack' },
+      CB.el('div', { class: 'row' }, CB.el('h2', {}, d.conv.title),
+        d.conv.kind === 'group'
+          ? CB.el('button', { onclick: () => CB.go('group', { id: params.id }) }, 'Group settings')
+          : null),
+      CB.el('div', { class: 'muted' }, d.conv.members.map((m) => m.display_name).join(', ')),
+      d.hasMore ? CB.el('button', { onclick: () => CB.go('chat', { id: params.id, limit: d.limit + 50 }) },
+        'Show older') : null,
+      CB.el('div', { class: 'messages' },
+        d.messages.length ? d.messages.map(row) : CB.el('p', { class: 'muted' }, 'Say hi!')),
+      seen(d) ? CB.el('div', { class: 'muted' }, 'Seen') : null,
+      CB.form({ fields: [{ name: 'body', label: 'Write a message' }], submit: 'Send', reset: true,
+        onsubmit: async (v) => {
+          const text = v.body.trim();
+          if (text === '') return;
+          await CB.api('POST', '/api/conversations/' + params.id + '/messages', { body: text });
+          CB.refresh();
+        } }));
+  }
 });
