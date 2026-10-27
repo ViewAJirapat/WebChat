@@ -1,0 +1,53 @@
+title = "Friend answers: accept, decline or cancel a friend request"
+type = "feat"
+files = [
+  "src/chatbook/features/friend_answers/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/friend_answers/**"]
+prompt = """
+Implement the feature `friend_answers` in `src/chatbook/features/friend_answers/handler.py`.
+The file is a stub: keep its CONTRACT docstring, its three @route lines and the function names
+`accept_request`, `decline_request` and `cancel_request`, and replace each
+`raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+
+A friend request is one row of friend_requests(id, from_id, to_id, created_at): from_id asked
+to_id. The recipient (to_id) may accept or decline it; the sender (from_id) may cancel it.
+
+In every route, first:
+  rid = path_id(request)                     (a bad or missing id raises 404 itself)
+  row = db.one("SELECT * FROM friend_requests WHERE id = ?", rid)
+
+POST /api/friends/requests/{id}/accept       function accept_request
+  1. row is None or row["to_id"] != me -> 404
+  2. befriend(db, row["from_id"], me, request.now)
+     (both directions; this also deletes the request, and a request in the other direction)
+  -> 200 {"friend": user_json(require_user(db, row["from_id"]))}
+
+POST /api/friends/requests/{id}/decline      function decline_request
+  1. row is None or row["to_id"] != me -> 404
+  2. db.run("DELETE FROM friend_requests WHERE id = ?", rid)
+  -> 200 {"declined": rid}
+
+DELETE /api/friends/requests/{id}            function cancel_request
+  1. row is None or row["from_id"] != me -> 404
+  2. db.run("DELETE FROM friend_requests WHERE id = ?", rid)
+  -> 200 {"cancelled": rid}
+
+Notes:
+- The 404 is the same whether the request does not exist or belongs to other users (existence
+  is not leaked). A request that was already accepted, declined or cancelled no longer exists,
+  so answering it again is 404 on every route.
+- Decline and cancel delete only the row with this id; other requests stay. They never create
+  friendships.
+- `rid` in the answers is the integer from path_id (a JSON number, not a string).
+- Imports: HTTPError, Request, Response, befriend, path_id, require_user, route, user_json, all
+  from chatbook.core.api.
+
+Tables you may write: friend_requests (delete); friendships only through befriend.
+JSON keys, status codes, list order and quoted texts must match exactly; error message
+texts are not tested.
+"""

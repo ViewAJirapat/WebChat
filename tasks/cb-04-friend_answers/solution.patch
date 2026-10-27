@@ -1,0 +1,58 @@
+diff --git a/src/chatbook/features/friend_answers/handler.py b/src/chatbook/features/friend_answers/handler.py
+index 32d1f87..a2f3e12 100644
+--- a/src/chatbook/features/friend_answers/handler.py
++++ b/src/chatbook/features/friend_answers/handler.py
+@@ -17,19 +17,49 @@ DELETE /api/friends/requests/{id}
+ Tables you may write: friend_requests (delete); friendships only through befriend.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    befriend,
++    path_id,
++    require_user,
++    route,
++    user_json,
++)
+ 
+ 
+ @route("POST", "/api/friends/requests/{id}/accept")
+ def accept_request(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    rid = path_id(request)
++    row = db.one("SELECT * FROM friend_requests WHERE id = ?", rid)
++    if row is None or row["to_id"] != me:
++        raise HTTPError(404, "friend request not found")
++    befriend(db, row["from_id"], me, request.now)
++    return Response(200, {"friend": user_json(require_user(db, row["from_id"]))})
+ 
+ 
+ @route("POST", "/api/friends/requests/{id}/decline")
+ def decline_request(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    rid = path_id(request)
++    row = db.one("SELECT * FROM friend_requests WHERE id = ?", rid)
++    if row is None or row["to_id"] != me:
++        raise HTTPError(404, "friend request not found")
++    db.run("DELETE FROM friend_requests WHERE id = ?", rid)
++    return Response(200, {"declined": rid})
+ 
+ 
+ @route("DELETE", "/api/friends/requests/{id}")
+ def cancel_request(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    rid = path_id(request)
++    row = db.one("SELECT * FROM friend_requests WHERE id = ?", rid)
++    if row is None or row["from_id"] != me:
++        raise HTTPError(404, "friend request not found")
++    db.run("DELETE FROM friend_requests WHERE id = ?", rid)
++    return Response(200, {"cancelled": rid})

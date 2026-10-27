@@ -1,0 +1,39 @@
+title = "Accounts: register and log in"
+type = "feat"
+files = ["src/chatbook/features/accounts/handler.py", "docs/api/base.md"]
+scope = ["src/chatbook/features/accounts/**"]
+prompt = """
+Implement the feature `accounts` in `src/chatbook/features/accounts/handler.py`. The file is a
+stub: keep its CONTRACT docstring, its two @route lines and the function names `register` and
+`login`, and replace each `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md (read-only). Notation: db = request.db.
+
+Imports: `import re` and, from chatbook.core.api: HTTPError, Request, Response, body_str,
+check_password, create_user, new_session, route, user_json. The helpers raise their own errors
+(body_str: 400, create_user: 409); do not catch them. Run the steps in the order given: the first
+failing step answers.
+
+POST /api/auth/register  (public)  body {"username", "password", "display_name"}
+  1. username = body_str(request, "username", max_len=20).lower()
+     if not re.fullmatch(r"[a-z0-9_]{3,20}", username): 400
+  2. password = body_str(request, "password", min_len=8, max_len=128, strip=False)
+  3. display_name = body_str(request, "display_name", max_len=50)
+  4. user = create_user(db, username, password, display_name, request.now)   (raises 409 itself)
+  5. token = new_session(db, user.id, request.now)
+  -> 201 {"token": token, "user": user_json(user)}
+
+POST /api/auth/login  (public)  body {"username", "password"}
+  1. username = body_str(request, "username", max_len=50).lower()
+  2. password = body_str(request, "password", max_len=128, strip=False)
+  3. user = check_password(db, username, password); None -> 401
+  -> 200 {"token": new_session(db, user.id, request.now), "user": user_json(user)}
+
+Notes:
+- body_str strips surrounding whitespace unless strip=False, so usernames and display names are
+  stored trimmed; passwords are used exactly as sent. Login has no 3-20 or a-z rule and no
+  8-character minimum: only the two body_str checks above.
+- Each successful call creates a new session; existing sessions stay valid.
+
+Tables you may write: users and sessions, only through create_user and new_session.
+JSON keys and status codes must match exactly; error message texts are not tested.
+"""

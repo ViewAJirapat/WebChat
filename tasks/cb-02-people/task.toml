@@ -1,0 +1,49 @@
+title = "People: search people"
+type = "feat"
+files = [
+  "src/chatbook/features/people/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/people/**"]
+prompt = """
+Implement the feature `people` in `src/chatbook/features/people/handler.py`. The file is a
+stub: keep its CONTRACT docstring, its @route line and the function name `search_users`, and
+replace the `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+
+GET /api/users?q=&limit=   (login required: the app already checks it)
+  1. q = query_str(request, "q", max_len=50)
+     (strips q; missing, blank or longer than 50 characters -> 400 by itself)
+  2. limit = query_int(request, "limit", default=20, lo=1, hi=50)
+     (missing -> 20; not an integer, or outside 1..50 -> 400 by itself)
+  3. rows = db.all("SELECT * FROM users WHERE id != ? ORDER BY username", me)
+  4. keep the rows where q.casefold() is in row["username"].casefold() or in
+     row["display_name"].casefold()   (plain Python `in`, no SQL LIKE)
+  5. keep the first `limit` rows
+  -> 200 {"users": [{**user_json(row), "relationship": relationship(db, me, row["id"])} ...]}
+
+Details:
+- Each user object has exactly the keys "id", "username", "display_name" and
+  "relationship". relationship(db, me, other) returns "friends", "request_sent" (me asked
+  them), "request_received" (they asked me) or "none", always seen from me.
+- The logged-in user is never listed (the SQL already leaves out id = me).
+- Order: by username, as the SQL returns the rows (not by id, not by display name).
+- Filter first, then cut to `limit`: limit counts matching users only, so never put LIMIT
+  or the search into the SQL.
+- Check the username and the display name separately; never join them into one string.
+- Use casefold() on both sides (not lower()). q keeps its inner spaces, and characters
+  such as % and _ are plain text.
+- No match -> 200 {"users": []}.
+
+Example: users dora ("Dora Lee", id 1), cleo ("Cleo Ward", id 2) and me ivan ("Ivan Ek",
+id 3); ivan and cleo are friends. As ivan, GET /api/users?q=%20LE%20 (q = "LE") ->
+200 {"users": [{"id": 2, "username": "cleo", "display_name": "Cleo Ward",
+"relationship": "friends"}, {"id": 1, "username": "dora", "display_name": "Dora Lee",
+"relationship": "none"}]}
+
+Tables you may write: none (this route only reads).
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""

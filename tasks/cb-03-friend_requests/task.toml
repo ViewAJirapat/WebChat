@@ -1,0 +1,71 @@
+title = "Friend requests: send and list friend requests"
+type = "feat"
+files = [
+  "src/chatbook/features/friend_requests/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/friend_requests/**"]
+prompt = """
+Implement the feature `friend_requests` in `src/chatbook/features/friend_requests/handler.py`.
+The file is a stub: keep its CONTRACT docstring, its two @route lines and the function names
+`send_request` and `list_requests`, and replace each `raise HTTPError(501, ...)` with the
+implementation below.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+
+A friend request is one row of friend_requests(id, from_id, to_id, created_at): from_id asked
+to_id. Its JSON shape R(row) is built by a helper you write in this file:
+  def request_json(db: Db, row: dict[str, Any]) -> dict[str, Any]:
+      return {"id": row["id"], "from": user_json(require_user(db, row["from_id"])),
+              "to": user_json(require_user(db, row["to_id"])), "created_at": row["created_at"]}
+
+POST /api/friends/requests  body {"user_id"}        function send_request
+Checks in exactly this order:
+  1. other = body_id(request, "user_id")
+     (missing, not a positive integer, true/false, or a body that is not an object -> 400 itself)
+  2. other == me -> 400
+  3. require_user(db, other)                  (unknown user -> 404 itself)
+  4. are_friends(db, me, other) -> 409
+  5. db.one("SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?", me, other)
+     is not None -> 409                       (me already asked other)
+  6. the same query with (other, me) is not None (other already asked me):
+     befriend(db, me, other, request.now)
+     -> 200 {"status": "friends", "friend": user_json(require_user(db, other))}
+  7. rid = db.run("INSERT INTO friend_requests (from_id, to_id, created_at) VALUES (?, ?, ?)",
+                  me, other, request.now)
+     -> 201 {"status": "pending", "request": request_json(db, {"id": rid, "from_id": me,
+             "to_id": other, "created_at": request.now})}
+
+GET /api/friends/requests                           function list_requests
+  incoming = db.all("SELECT * FROM friend_requests WHERE to_id = ? ORDER BY id DESC", me)
+  outgoing = db.all("SELECT * FROM friend_requests WHERE from_id = ? ORDER BY id DESC", me)
+  -> 200 {"incoming": [request_json(db, r) for r in incoming],
+          "outgoing": [request_json(db, r) for r in outgoing]}
+
+Details:
+- Keep the check order: step 4 comes before steps 5 and 6, and step 5 before step 6. So a
+  409 wins even when the other user has also asked me, and then nothing changes.
+- A 400, 404 or 409 changes nothing: no new row and no friendship.
+- Step 6 inserts no row. befriend makes both users friends (both directions) and deletes the
+  requests between the two of them, in either direction; requests that involve third users
+  stay.
+- "status" is the exact text "pending" or "friends". "id" and "created_at" are JSON numbers.
+- Lists: newest first by id (ORDER BY id DESC, not by created_at). "incoming" holds the
+  requests sent to me, "outgoing" the ones I sent; requests between other users are never
+  listed. Nothing pending -> 200 {"incoming": [], "outgoing": []}.
+- Imports: Any from typing; Db, HTTPError, Request, Response, are_friends, befriend, body_id,
+  require_user, route, user_json from chatbook.core.api.
+
+Example: users ana ("Ana Diaz", id 1) and ben ("Ben Ng", id 2); request.now is 1700000050000.
+As ana, POST {"user_id": 2} -> 201 {"status": "pending", "request": {"id": 1,
+"from": {"id": 1, "username": "ana", "display_name": "Ana Diaz"},
+"to": {"id": 2, "username": "ben", "display_name": "Ben Ng"}, "created_at": 1700000050000}}.
+Then as ben, GET -> 200 {"incoming": [that same request object], "outgoing": []}. As ana again,
+POST {"user_id": 2} -> 409. As ben, POST {"user_id": 1} -> 200 {"status": "friends",
+"friend": {"id": 1, "username": "ana", "display_name": "Ana Diaz"}}, and the request is gone.
+
+Tables you may write: friend_requests (insert); friendships only through befriend.
+JSON keys, status codes, list order and quoted texts must match exactly; error message
+texts are not tested.
+"""

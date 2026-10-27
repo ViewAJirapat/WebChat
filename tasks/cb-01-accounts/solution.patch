@@ -1,0 +1,47 @@
+diff --git a/src/chatbook/features/accounts/handler.py b/src/chatbook/features/accounts/handler.py
+index 66581a2..6611f56 100644
+--- a/src/chatbook/features/accounts/handler.py
++++ b/src/chatbook/features/accounts/handler.py
+@@ -16,14 +16,39 @@ POST /api/auth/login (public) body {"username", "password"}
+   -> 200 {"token": new_session(request.db, user.id, request.now), "user": user_json(user)}
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++import re
++
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    body_str,
++    check_password,
++    create_user,
++    new_session,
++    route,
++    user_json,
++)
+ 
+ 
+ @route("POST", "/api/auth/register", public=True)
+ def register(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    username = body_str(request, "username", max_len=20).lower()
++    if not re.fullmatch(r"[a-z0-9_]{3,20}", username):
++        raise HTTPError(400, "username must be 3-20 characters: a-z, 0-9 or _")
++    password = body_str(request, "password", min_len=8, max_len=128, strip=False)
++    display_name = body_str(request, "display_name", max_len=50)
++    user = create_user(request.db, username, password, display_name, request.now)
++    token = new_session(request.db, user.id, request.now)
++    return Response(201, {"token": token, "user": user_json(user)})
+ 
+ 
+ @route("POST", "/api/auth/login", public=True)
+ def login(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    username = body_str(request, "username", max_len=50).lower()
++    password = body_str(request, "password", max_len=128, strip=False)
++    user = check_password(request.db, username, password)
++    if user is None:
++        raise HTTPError(401, "wrong username or password")
++    token = new_session(request.db, user.id, request.now)
++    return Response(200, {"token": token, "user": user_json(user)})

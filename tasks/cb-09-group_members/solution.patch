@@ -1,0 +1,56 @@
+diff --git a/src/chatbook/features/group_members/handler.py b/src/chatbook/features/group_members/handler.py
+index 5eb32aa..db02fb6 100644
+--- a/src/chatbook/features/group_members/handler.py
++++ b/src/chatbook/features/group_members/handler.py
+@@ -19,14 +19,48 @@ DELETE /api/groups/{id}/members/me
+ Tables you may write: members only through add_member and remove_member.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    add_member,
++    are_friends,
++    body_id,
++    conversation_json,
++    member_ids,
++    path_id,
++    remove_member,
++    require_member,
++    require_user,
++    route,
++)
+ 
+ 
+ @route("POST", "/api/groups/{id}/members")
+ def add_member_route(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    cid = path_id(request)
++    conv = require_member(db, cid, me)
++    if conv["kind"] != "group":
++        raise HTTPError(400, "not a group")
++    uid = body_id(request, "user_id")
++    require_user(db, uid)
++    if uid in member_ids(db, cid):
++        raise HTTPError(409, "already a member")
++    if not are_friends(db, me, uid):
++        raise HTTPError(403, "you can only add your friends")
++    add_member(db, cid, uid, request.now)
++    return Response(200, {"conversation": conversation_json(db, cid, me)})
+ 
+ 
+ @route("DELETE", "/api/groups/{id}/members/me")
+ def leave_group(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    cid = path_id(request)
++    conv = require_member(db, cid, me)
++    if conv["kind"] != "group":
++        raise HTTPError(400, "not a group")
++    remove_member(db, cid, me)
++    return Response(200, {"left": cid})

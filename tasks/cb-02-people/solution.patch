@@ -1,0 +1,38 @@
+diff --git a/src/chatbook/features/people/handler.py b/src/chatbook/features/people/handler.py
+index 31c2917..e17ad39 100644
+--- a/src/chatbook/features/people/handler.py
++++ b/src/chatbook/features/people/handler.py
+@@ -13,9 +13,31 @@ GET /api/users?q=&limit=
+ Read-only.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from typing import Any
++
++from chatbook.core.api import (
++    Request,
++    Response,
++    query_int,
++    query_str,
++    relationship,
++    route,
++    user_json,
++)
+ 
+ 
+ @route("GET", "/api/users")
+ def search_users(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    q = query_str(request, "q", max_len=50)
++    limit = query_int(request, "limit", default=20, lo=1, hi=50)
++    rows = db.all("SELECT * FROM users WHERE id != ? ORDER BY username", me)
++    needle = q.casefold()
++    users: list[dict[str, Any]] = []
++    for row in rows:
++        if len(users) == limit:
++            break
++        if needle in row["username"].casefold() or needle in row["display_name"].casefold():
++            users.append({**user_json(row), "relationship": relationship(db, me, row["id"])})
++    return Response(200, {"users": users})
