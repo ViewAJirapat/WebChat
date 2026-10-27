@@ -183,6 +183,7 @@ def test_clicking_delete_removes_the_comment_and_reloads() -> None:
         steps=[{"click_id": "delete-21"}],
     )
     assert res.errors == [] and res.unmatched == []
+    assert res.nav == [] and res.toasts == []
     assert res.calls == [*gets(7), ["DELETE", "/api/comments/21", None], *gets(7)]
     assert "Comments (1)" in res.text
     assert "gorgeous colours" not in res.text
@@ -202,6 +203,7 @@ def test_post_author_deletes_another_users_comment() -> None:
         steps=[{"click_id": "delete-34"}],
     )
     assert res.errors == [] and res.unmatched == []
+    assert res.nav == [] and res.toasts == []
     assert res.calls == [*gets(12), ["DELETE", "/api/comments/34", None], *gets(12)]
     assert "Comments (1)" in res.text
     assert "brr" not in res.text
@@ -216,6 +218,7 @@ def test_like_posts_then_refreshes() -> None:
         steps=[{"click_id": "like-7"}],
     )
     assert res.errors == [] and res.unmatched == []
+    assert res.nav == [] and res.toasts == []
     assert res.calls == [*gets(7), ["POST", "/api/posts/7/like", None], *gets(7)]
     assert "Unlike (4)" in res.labels
     assert "Like (3)" not in res.labels
@@ -235,6 +238,7 @@ def test_unlike_deletes_then_refreshes() -> None:
         steps=[{"click_id": "like-12"}],
     )
     assert res.errors == [] and res.unmatched == []
+    assert res.nav == [] and res.toasts == []
     assert res.calls == [*gets(12), ["DELETE", "/api/posts/12/like", None], *gets(12)]
     assert "Like (0)" in res.labels
     assert res.count("POST", "/api/posts/12/like") == 0
@@ -252,6 +256,7 @@ def test_comment_form_trims_posts_and_refreshes(pid: int) -> None:
         steps=[{"submit": "Comment", "values": {"body": "  lovely light "}}],
     )
     assert res.errors == [] and res.unmatched == []
+    assert res.nav == [] and res.toasts == []
     assert res.calls == [
         *gets(pid),
         ["POST", f"/api/posts/{pid}/comments", {"body": "lovely light"}],
@@ -260,6 +265,22 @@ def test_comment_form_trims_posts_and_refreshes(pid: int) -> None:
     assert "Comments (2)" in res.text
     assert "Alice Adams lovely light" in res.text
     assert res.forms[0]["values"] == {"body": ""}
+
+
+def test_like_refreshes_in_place_and_keeps_the_comment_draft() -> None:
+    liked = LAKE | {"liked": True, "like_count": 4}
+    res = open_post(
+        [LAKE, liked],
+        extra={"POST /api/posts/7/like": {"post_id": 7, "like_count": 4, "liked": True}},
+        steps=[
+            {"fill": "Comment", "values": {"body": "half a thought"}},
+            {"click_id": "like-7"},
+        ],
+    )
+    assert res.errors == [] and res.unmatched == []
+    assert res.nav == []
+    assert res.calls == [*gets(7), ["POST", "/api/posts/7/like", None], *gets(7)]
+    assert res.forms[0]["values"] == {"body": "half a thought"}
 
 
 @pytest.mark.parametrize("body", ["   ", ""], ids=["spaces", "empty"])
