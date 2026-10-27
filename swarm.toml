@@ -33,7 +33,11 @@ verify = [
   ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
   ["{python}", "tools/check_extra.py"],
 ]
+# Exit codes are ignored (the gates decide). Restore first: it puts back a CONTRACT block a
+# worker deleted outright (the gate's printed block can be clipped when another stage also
+# fails); ruff then fixes the spacing below it and never changes the block (DESIGN 4).
 autofix = [
+  ["{python}", "tools/check_extra.py", "--restore-contracts"],
   ["{python}", "-m", "ruff", "check", "--fix", "--exit-zero", "--quiet", "."],
   ["{python}", "-m", "ruff", "format", "--quiet", "."],
 ]
@@ -109,7 +113,11 @@ verify = [
   ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
   ["{python}", "tools/check_extra.py"],
 ]
+# Exit codes are ignored (the gates decide). Restore first: it puts back a CONTRACT block a
+# worker deleted outright (the gate's printed block can be clipped when another stage also
+# fails); ruff then fixes the spacing below it and never changes the block (DESIGN 4).
 autofix = [
+  ["{python}", "tools/check_extra.py", "--restore-contracts"],
   ["{python}", "-m", "ruff", "check", "--fix", "--exit-zero", "--quiet", "."],
   ["{python}", "-m", "ruff", "format", "--quiet", "."],
 ]
