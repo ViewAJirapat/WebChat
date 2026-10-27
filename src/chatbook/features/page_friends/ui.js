@@ -32,5 +32,57 @@ CB.page('friends', {
   title: 'Friends',
   nav: 'Friends',
   order: 20,
-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+  load: async () => {
+    const req = await CB.api('GET', '/api/friends/requests');
+    const fr = await CB.api('GET', '/api/friends');
+    return { req, friends: fr.friends };
+  },
+  render: (d) => {
+    const incoming = (r) => CB.el('div', { class: 'item' },
+      CB.avatar(r.from),
+      CB.userLink(r.from),
+      CB.el('button', { testid: 'accept-' + r.id, onclick: async () => {
+        await CB.api('POST', '/api/friends/requests/' + r.id + '/accept');
+        CB.refresh();
+      }}, 'Accept'),
+      CB.el('button', { testid: 'decline-' + r.id, onclick: async () => {
+        await CB.api('POST', '/api/friends/requests/' + r.id + '/decline');
+        CB.refresh();
+      }}, 'Decline')
+    );
+
+    const outgoing = (r) => CB.el('div', { class: 'item' },
+      CB.avatar(r.to),
+      CB.userLink(r.to),
+      CB.el('button', { testid: 'cancel-' + r.id, onclick: async () => {
+        await CB.api('DELETE', '/api/friends/requests/' + r.id);
+        CB.refresh();
+      }}, 'Cancel')
+    );
+
+    const friend = (f) => CB.el('div', { class: 'item' },
+      CB.avatar(f),
+      CB.userLink(f),
+      CB.el('button', { testid: 'message-' + f.id, onclick: async () => {
+        const r = await CB.api('POST', '/api/dm', { user_id: f.id });
+        CB.go('chat', { id: r.conversation.id });
+      }}, 'Message'),
+      CB.el('button', { testid: 'unfriend-' + f.id, onclick: async () => {
+        await CB.api('DELETE', '/api/friends/' + f.id);
+        CB.refresh();
+      }}, 'Unfriend')
+    );
+
+    return CB.el('div', { class: 'stack' },
+      CB.el('h2', {}, 'Friend requests'),
+      d.req.incoming.length ? d.req.incoming.map(incoming)
+                          : CB.el('p', { class: 'muted' }, 'No requests'),
+      CB.el('h2', {}, 'Sent requests'),
+      d.req.outgoing.length ? d.req.outgoing.map(outgoing)
+                          : CB.el('p', { class: 'muted' }, 'No sent requests'),
+      CB.el('h2', {}, 'Friends (' + d.friends.length + ')'),
+      d.friends.length ? d.friends.map(friend)
+                      : CB.el('p', { class: 'muted' }, 'No friends yet')
+    );
+  }
 });
