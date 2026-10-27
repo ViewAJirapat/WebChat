@@ -16,14 +16,25 @@ GET /api/conversations/{id}
 Read-only.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import Request, Response, conversation_json, path_id, require_member, route
 
 
 @route("GET", "/api/conversations")
 def list_conversations(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    rows = request.db.all("SELECT conversation_id FROM members WHERE user_id = ?", request.me.id)
+    items = [conversation_json(request.db, r["conversation_id"], request.me.id) for r in rows]
+    items.sort(key=lambda c: (c["updated_at"], c["id"]), reverse=True)
+    return Response(200, {"conversations": items})
 
 
 @route("GET", "/api/conversations/{id}")
 def get_conversation(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    cid = path_id(request)
+    require_member(request.db, cid, request.me.id)
+    rows = request.db.all(
+        "SELECT user_id, last_read_id FROM members WHERE conversation_id = ? ORDER BY user_id", cid
+    )
+    reads = [{"user_id": r["user_id"], "last_read_id": r["last_read_id"]} for r in rows]
+    return Response(
+        200, {"conversation": conversation_json(request.db, cid, request.me.id), "reads": reads}
+    )
