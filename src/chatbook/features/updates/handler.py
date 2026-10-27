@@ -12,9 +12,22 @@ GET /api/updates
 Read-only.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import Request, Response, route, unread_count
 
 
 @route("GET", "/api/updates")
 def get_updates(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    me = request.me.id
+    rows = request.db.all("SELECT conversation_id FROM members WHERE user_id = ?", me)
+    counts = [unread_count(request.db, r["conversation_id"], me) for r in rows]
+    unread_total = sum(counts)
+    unread_conversations = sum(1 for c in counts if c > 0)
+    requests = int(request.db.value("SELECT COUNT(*) FROM friend_requests WHERE to_id = ?", me))
+    return Response(
+        200,
+        {
+            "unread_total": unread_total,
+            "unread_conversations": unread_conversations,
+            "friend_requests": requests,
+        },
+    )
