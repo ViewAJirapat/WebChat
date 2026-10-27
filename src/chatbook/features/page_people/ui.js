@@ -23,9 +23,62 @@
 //                           CB.go('chat', {id: r.conversation.id}); }}, 'Message')
 // Server answers: GET /api/users -> {users: [{id, username, display_name, relationship}]};
 // POST /api/dm -> {conversation: {id, ...}}.
+
+async function load(params) {
+  const q = (params.q || '').trim();
+  if (q === '') {
+    return { q: '', users: null };
+  }
+  const r = await CB.api('GET', '/api/users' + CB.qs({ q }));
+  return { q, users: r.users };
+}
+
+function render(d) {
+  return CB.el('div', { class: 'stack' },
+    CB.form({
+      fields: [{ name: 'q', label: 'Search people', value: d.q }],
+      submit: 'Search',
+      onsubmit: (v) => CB.go('people', { q: v.q.trim() })
+    }),
+    d.users === null
+      ? CB.el('p', { class: 'muted' }, 'Search by name or username')
+      : d.users.length === 0
+        ? CB.el('p', { class: 'muted' }, 'No people found')
+        : d.users.map(row)
+  );
+}
+
+function row(u) {
+  return CB.el('div', { class: 'item' }, CB.avatar(u), CB.userLink(u),
+    CB.el('span', { class: 'muted' }, '@' + u.username), action(u)
+  );
+}
+
+function action(u) {
+  switch (u.relationship) {
+    case 'none':
+      return CB.el('button', { testid: 'add-' + u.id, onclick: async () => {
+        await CB.api('POST', '/api/friends/requests', { user_id: u.id });
+        CB.toast('Request sent'); CB.refresh();
+      }}, 'Add friend');
+    case 'request_sent':
+      return CB.el('button', { disabled: true }, 'Requested');
+    case 'request_received':
+      return CB.el('button', { onclick: () => CB.go('friends') }, 'Respond');
+    case 'friends':
+      return CB.el('button', { testid: 'message-' + u.id, onclick: async () => {
+        const r = await CB.api('POST', '/api/dm', { user_id: u.id });
+        CB.go('chat', { id: r.conversation.id });
+      }}, 'Message');
+    default:
+      return CB.el('span', {}, 'Unknown');
+  }
+}
+
 CB.page('people', {
   title: 'People',
   nav: 'People',
   order: 30,
-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+  load,
+  render
 });
