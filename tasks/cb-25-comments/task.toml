@@ -34,7 +34,7 @@ GET /api/posts/{id}/comments                               function list_comment
      visible_post(db, pid, me)              (404 itself, see above)
   2. rows = db.all("SELECT * FROM comments WHERE post_id = ? ORDER BY id", pid)
   -> 200 {"comments": [K(r) for r in rows]}
-  The list holds only this post's comments, in id order (oldest first), by any author (also
+  The list holds only this post's comments, in id order (by id, not by created_at), by any author (also
   authors who are not friends of me). A post without comments -> {"comments": []}.
 
 POST /api/posts/{id}/comments  body {"body"}               function add_comment
