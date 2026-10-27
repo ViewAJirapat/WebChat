@@ -19,14 +19,44 @@ DELETE /api/groups/{id}/members/me
 Tables you may write: members only through add_member and remove_member.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import (
+    HTTPError,
+    Request,
+    Response,
+    add_member,
+    are_friends,
+    body_id,
+    conversation_json,
+    member_ids,
+    path_id,
+    remove_member,
+    require_member,
+    require_user,
+    route,
+)
 
 
 @route("POST", "/api/groups/{id}/members")
 def add_member_route(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    cid = path_id(request)
+    conv = require_member(request.db, cid, request.me.id)
+    if conv["kind"] != "group":
+        raise HTTPError(400, "not a group")
+    uid = body_id(request, "user_id")
+    require_user(request.db, uid)
+    if uid in member_ids(request.db, cid):
+        raise HTTPError(409, "user is already a member")
+    if not are_friends(request.db, request.me.id, uid):
+        raise HTTPError(403, "user is not a friend")
+    add_member(request.db, cid, uid, request.now)
+    return Response(200, {"conversation": conversation_json(request.db, cid, request.me.id)})
 
 
 @route("DELETE", "/api/groups/{id}/members/me")
 def leave_group(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    cid = path_id(request)
+    conv = require_member(request.db, cid, request.me.id)
+    if conv["kind"] != "group":
+        raise HTTPError(400, "not a group")
+    remove_member(request.db, cid, request.me.id)
+    return Response(200, {"left": cid})
