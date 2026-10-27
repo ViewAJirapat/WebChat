@@ -1,0 +1,69 @@
+title = "Suggestions: people you may know (friends of friends)"
+type = "feat"
+files = [
+  "src/chatbook/features/suggestions/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/suggestions/**"]
+prompt = """
+Implement the feature `suggestions` in `src/chatbook/features/suggestions/handler.py`. The file
+is a stub: keep its CONTRACT docstring unchanged at the top of the file, its @route line and the
+function name `friend_suggestions`, and replace the `raise HTTPError(501, ...)` with the
+implementation below. Put your code below the CONTRACT docstring.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: relationship, require_user, user_json (plus the
+Request, Response and route already imported), and Any from typing. HTTPError is not needed:
+remove it from the import (an unused import fails the lint gate).
+
+GET /api/friends/suggestions                               function friend_suggestions
+  rows = db.all("SELECT f2.friend_id AS id, COUNT(*) AS mutual FROM friendships f1"
+                " JOIN friendships f2 ON f2.user_id = f1.friend_id"
+                " WHERE f1.user_id = ? AND f2.friend_id != ? GROUP BY f2.friend_id", me, me)
+  keep rows where relationship(db, me, row["id"]) == "none"
+  sort by (-mutual, username of that user); keep the first 10
+  -> 200 {"suggestions": [{**user_json(require_user(db, r["id"])), "mutual": int(r["mutual"])}]}
+Read-only.
+
+Details:
+- The query gives one row per friend of a friend of me (me left out): "id" is that person's
+  user id and "mutual" is how many of me's friends are friends with that person. Only rows in
+  friendships count; a pending friend request does not make anyone a friend.
+- Keep only the people whose relationship(db, me, row["id"]) is "none". So these are left out:
+  me's friends ("friends"), people me sent a pending friend request to ("request_sent"), and
+  people who sent me a pending friend request ("request_received").
+- Order: "mutual" descending (most mutual friends first); equal "mutual" by username
+  ascending (plain string order). Not by display_name and not by id.
+- Filter first, then sort, then keep the first 10: the answer is the top 10 of the kept,
+  sorted list. Fewer than 10 kept -> all of them. Nobody kept -> {"suggestions": []}.
+- Each item is user_json of that user plus "mutual": exactly the keys "id", "username",
+  "display_name" and "mutual", and "mutual" is an int.
+- The route writes nothing. It reads no query string and no body.
+- Use the SQL above as one string literal (adjacent literals, never + or f-strings).
+
+A way to write it:
+  items: list[dict[str, Any]] = []
+  for row in rows:
+      if relationship(db, me, row["id"]) == "none":
+          user = user_json(require_user(db, row["id"]))
+          items.append({**user, "mutual": int(row["mutual"])})
+  items.sort(key=lambda s: (-s["mutual"], s["username"]))
+  return Response(200, {"suggestions": items[:10]})
+
+Example: users uma (id 1, "Uma Ueda"), vic (id 2, "Vic Vance"), wes (id 3, "Wes Webb"),
+xia (id 4, "Xia Xu"), yul (id 5, "Yul Yoon") and kip (id 6, "Ziggy Kip"). Friendships:
+uma-vic, uma-wes, vic-xia, vic-yul, vic-kip, wes-xia. uma sent a friend request to kip.
+  As uma: GET /api/friends/suggestions -> 200 {"suggestions": [
+    {"id": 4, "username": "xia", "display_name": "Xia Xu", "mutual": 2},
+    {"id": 5, "username": "yul", "display_name": "Yul Yoon", "mutual": 1}]}
+  (kip is left out: the request is pending; vic and wes are already friends.)
+  As yul: -> 200 {"suggestions": [
+    {"id": 6, "username": "kip", "display_name": "Ziggy Kip", "mutual": 1},
+    {"id": 1, "username": "uma", "display_name": "Uma Ueda", "mutual": 1},
+    {"id": 4, "username": "xia", "display_name": "Xia Xu", "mutual": 1}]}
+  (all have 1 mutual friend, vic, so they are ordered by username.)
+
+Tables you may write: none (read-only).
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

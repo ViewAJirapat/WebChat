@@ -1,0 +1,58 @@
+diff --git a/src/chatbook/features/likes/handler.py b/src/chatbook/features/likes/handler.py
+index b4ea09f..9503564 100644
+--- a/src/chatbook/features/likes/handler.py
++++ b/src/chatbook/features/likes/handler.py
+@@ -18,19 +18,49 @@ GET /api/posts/{id}/likes
+ Tables you may write: likes.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from typing import Any
++
++from chatbook.core.api import Db, Request, Response, path_id, route, user_json, visible_post
++
++
++def _like_json(db: Db, pid: int, liked: bool) -> dict[str, Any]:
++    n = int(db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid))
++    return {"post_id": pid, "like_count": n, "liked": liked}
+ 
+ 
+ @route("POST", "/api/posts/{id}/like")
+ def like_post(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    pid = path_id(request)
++    visible_post(db, pid, me)
++    db.run(
++        "INSERT OR IGNORE INTO likes (post_id, user_id, created_at) VALUES (?, ?, ?)",
++        pid,
++        me,
++        request.now,
++    )
++    return Response(200, _like_json(db, pid, True))
+ 
+ 
+ @route("DELETE", "/api/posts/{id}/like")
+ def unlike_post(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    pid = path_id(request)
++    visible_post(db, pid, me)
++    db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, me)
++    return Response(200, _like_json(db, pid, False))
+ 
+ 
+ @route("GET", "/api/posts/{id}/likes")
+ def list_likes(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    pid = path_id(request)
++    visible_post(db, pid, request.me.id)
++    rows = db.all(
++        "SELECT u.* FROM likes l JOIN users u ON u.id = l.user_id"
++        " WHERE l.post_id = ? ORDER BY l.created_at, u.id",
++        pid,
++    )
++    return Response(200, {"users": [user_json(r) for r in rows]})
