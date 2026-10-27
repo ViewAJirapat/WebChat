@@ -14,9 +14,44 @@ GET /api/conversations/{id}/messages?limit=&before=
 Read-only.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from chatbook.core.api import (
+    Request,
+    Response,
+    message_json,
+    path_id,
+    query_int,
+    query_opt_int,
+    require_member,
+    route,
+)
 
 
 @route("GET", "/api/conversations/{id}/messages")
 def list_messages(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    # 1. cid = path_id(request); require_member(db, cid, me)
+    cid = path_id(request)
+    require_member(request.db, cid, request.me.id)
+
+    # 2. limit = query_int(request, "limit", default=50, lo=1, hi=200)
+    limit = query_int(request, "limit", default=50, lo=1, hi=200)
+
+    # 3. before = query_opt_int(request, "before")
+    before = query_opt_int(request, "before")
+    cursor = before if before is not None else 2**62
+
+    # 4. rows, more = db.page("SELECT * FROM messages WHERE conversation_id = ? AND id < ?"
+    #                         " ORDER BY id DESC", cid, cursor, limit=limit)
+    rows, more = request.db.page(
+        "SELECT * FROM messages WHERE conversation_id = ? AND id < ? ORDER BY id DESC",
+        cid,
+        cursor,
+        limit=limit,
+    )
+
+    # 5. rows.reverse()                      (oldest first)
+    rows.reverse()
+
+    # -> 200 {"messages": [message_json(db, r) for r in rows], "has_more": more}
+    return Response(
+        200, {"messages": [message_json(request.db, r) for r in rows], "has_more": more}
+    )
