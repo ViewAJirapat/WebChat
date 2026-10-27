@@ -1,0 +1,58 @@
+diff --git a/src/chatbook/features/page_discover/ui.js b/src/chatbook/features/page_discover/ui.js
+index d67bf36..7482b71 100644
+--- a/src/chatbook/features/page_discover/ui.js
++++ b/src/chatbook/features/page_discover/ui.js
+@@ -19,9 +19,52 @@
+ //           CB.toast('Request sent'); CB.refresh(); }}, 'Add friend')))
+ //     : CB.el('p', {class: 'muted'}, 'No suggestions'))
+ // Server answers: {online: [U]}; {suggestions: [U + mutual]}.
++
++function online(u) {
++  return CB.el('div', {class: 'item'},
++    CB.avatar(u),
++    CB.userLink(u),
++    CB.el('button', {
++      testid: 'message-' + u.id,
++      onclick: async () => {
++        const r = await CB.api('POST', '/api/dm', {user_id: u.id});
++        CB.go('chat', {id: r.conversation.id});
++      },
++    }, 'Message'));
++}
++
++function suggestion(s) {
++  return CB.el('div', {class: 'item'},
++    CB.avatar(s),
++    CB.userLink(s),
++    CB.el('span', {class: 'muted'}, CB.plural(s.mutual, 'mutual friend')),
++    CB.el('button', {
++      testid: 'add-' + s.id,
++      onclick: async () => {
++        await CB.api('POST', '/api/friends/requests', {user_id: s.id});
++        CB.toast('Request sent');
++        CB.refresh();
++      },
++    }, 'Add friend'));
++}
++
+ CB.page('discover', {
+   title: 'Discover',
+   nav: 'Discover',
+   order: 35,
+-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
++  poll: 15000,
++  load: async () => {
++    const on = await CB.api('GET', '/api/friends/online');
++    const sg = await CB.api('GET', '/api/friends/suggestions');
++    return {online: on.online, suggestions: sg.suggestions};
++  },
++  render: (d) => CB.el('div', {class: 'stack'},
++    CB.el('h2', {}, 'Online now'),
++    d.online.length
++      ? d.online.map(online)
++      : CB.el('p', {class: 'muted'}, 'Nobody is online'),
++    CB.el('h2', {}, 'People you may know'),
++    d.suggestions.length
++      ? d.suggestions.map(suggestion)
++      : CB.el('p', {class: 'muted'}, 'No suggestions')),
+ });

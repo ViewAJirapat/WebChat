@@ -1,0 +1,73 @@
+title = "Post page: one post with its comments"
+type = "feat"
+files = ["src/chatbook/features/page_post/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_post/**"]
+prompt = """
+Implement the page `post` in `src/chatbook/features/page_post/ui.js`. The file is a stub:
+keep its CONTRACT comment unchanged at the top of the file, keep its `CB.page('post', ...)`
+call with `title: 'Post'` (no `nav`, no `order`, no `poll`), and replace the stub body with
+`load` and `render` below. Put your code below the CONTRACT comment, after one blank line.
+Reference: docs/ui.md (read-only).
+
+CB.page('post', {title: 'Post', load, render})                       no nav
+load(params):
+  const a = await CB.api('GET', '/api/posts/' + params.id)
+  const b = await CB.api('GET', '/api/posts/' + params.id + '/comments')
+  return {post: a.post, comments: b.comments}
+render(d, params) -> CB.el('div', {class: 'stack'}, in this order:
+  CB.el('button', {onclick: () => CB.go('feed')}, 'Back to feed'),
+  CB.el('div', {class: 'card'},
+    CB.el('div', {class: 'row'}, CB.avatar(d.post.author), CB.userLink(d.post.author),
+          CB.el('small', {class: 'muted'}, CB.time(d.post.created_at))),
+    CB.el('p', {}, d.post.body),
+    CB.el('button', {testid: 'like-' + d.post.id, onclick: async () => {
+        await CB.api(d.post.liked ? 'DELETE' : 'POST', '/api/posts/' + d.post.id + '/like');
+        CB.refresh(); }}, (d.post.liked ? 'Unlike' : 'Like') + ' (' + d.post.like_count + ')')),
+  CB.el('h3', {}, 'Comments (' + d.comments.length + ')'),
+  d.comments.length ? d.comments.map(comment) : CB.el('p', {class: 'muted'}, 'No comments yet'),
+  CB.form({fields: [{name: 'body', label: 'Write a comment'}], submit: 'Comment', reset: true,
+           onsubmit: async (v) => {
+             const text = v.body.trim(); if (text === '') return;
+             await CB.api('POST', '/api/posts/' + params.id + '/comments', {body: text});
+             CB.refresh(); }}))
+comment(k) (defined inside render, so it can read d) = CB.el('div', {class: 'item'},
+  CB.avatar(k.author), CB.userLink(k.author),
+  CB.el('span', {}, k.body), CB.el('small', {class: 'muted'}, CB.time(k.created_at)),
+  k.author.id === CB.me.id || d.post.author.id === CB.me.id
+    ? CB.el('button', {testid: 'delete-' + k.id, onclick: async () => {
+        await CB.api('DELETE', '/api/comments/' + k.id); CB.refresh(); }}, 'Delete')
+    : null)
+Server answers: {post: Post}; {comments: [K]}, K = {id, post_id, author: U, body, created_at}.
+Post = {id, author: U, body, created_at, like_count, comment_count, liked}; U = {id, username,
+display_name}.
+
+Details:
+- The page has `title: 'Post'` only: no `nav`, no `order` and no `poll`. It never reloads by
+  itself; only the `CB.refresh()` after an action reloads it.
+- `load(params)` makes exactly two requests, one after the other and in this order:
+  `GET /api/posts/<params.id>`, then `GET /api/posts/<params.id>/comments`. It returns
+  `{post: a.post, comments: b.comments}`.
+- `render(d, params)` returns one `<div class="stack">` with five children in this order: the
+  `'Back to feed'` button, the post card, the `<h3>` heading, the comments (or the
+  `'No comments yet'` paragraph), and the comment form.
+- `'Back to feed'` calls `CB.go('feed')` with no params and sends no request.
+- The like button (testid `'like-' + d.post.id`) shows `'Like (<like_count>)'` when
+  `d.post.liked` is false and `'Unlike (<like_count>)'` when it is true. A click sends `POST`
+  (not liked) or `DELETE` (liked) to `/api/posts/<d.post.id>/like` with no body, then calls
+  `CB.refresh()`.
+- The heading is `'Comments (' + d.comments.length + ')'`: the number of comments in the list
+  (also `(0)` and `(1)`), not `d.post.comment_count` and not `CB.plural`.
+- Comments are shown in the order the server gives them, one `<div class="item">` each. The
+  `'Delete'` button (testid `'delete-' + k.id`) is shown only when `CB.me.id` equals the
+  comment's author id or the post's author id; otherwise the item has no button. A click sends
+  `DELETE /api/comments/<k.id>` with no body, then calls `CB.refresh()`.
+- The form has one text field `body` labelled `'Write a comment'`, the submit label `'Comment'`
+  and `reset: true`. Submitting trims `v.body`; if the result is empty it returns without
+  calling `CB.api` or `CB.refresh()`. Otherwise it posts `{body: text}` to
+  `/api/posts/<params.id>/comments`, then calls `CB.refresh()`.
+- Define `comment(k)` inside `render` (it reads `d`), before the `return`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, headings, classes, testids, button labels, request paths and bodies, and element order
+must match exactly; error message texts are not tested.
+"""
