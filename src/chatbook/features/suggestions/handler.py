@@ -12,9 +12,27 @@ GET /api/friends/suggestions
 Read-only.
 """
 
-from chatbook.core.api import HTTPError, Request, Response, route
+from typing import Any
+
+from chatbook.core.api import Request, Response, relationship, require_user, route, user_json
 
 
 @route("GET", "/api/friends/suggestions")
 def friend_suggestions(request: Request) -> Response:
-    raise HTTPError(501, "not implemented")
+    me = request.me.id
+    rows = request.db.all(
+        "SELECT f2.friend_id AS id, COUNT(*) AS mutual FROM friendships f1"
+        " JOIN friendships f2 ON f2.user_id = f1.friend_id"
+        " WHERE f1.user_id = ? AND f2.friend_id != ? GROUP BY f2.friend_id",
+        me,
+        me,
+    )
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        if relationship(request.db, me, row["id"]) == "none":
+            user = user_json(require_user(request.db, row["id"]))
+            items.append({**user, "mutual": int(row["mutual"])})
+
+    items.sort(key=lambda s: (-s["mutual"], s["username"]))
+    return Response(200, {"suggestions": items[:10]})
