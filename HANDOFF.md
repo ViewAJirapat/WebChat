@@ -37,14 +37,15 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
   - 6 old `integration/2026*` branches. They can be deleted.
 - `chatbook-oracle`: `main` @ `87de89e`, clean, only `main`. It is current.
 - `harness`: `main` @ `2ecb8e5`, clean, with tasks cb-01..cb-30.
-- **GitHub:** everything is pushed to https://github.com/ViewAJirapat/WebChat, as three histories
-  in one repo:
+- **GitHub:** everything is pushed to https://github.com/ViewAJirapat/WebChat. Each local repo's
+  `main` pushes to its own working branch:
 
   | Remote branch | Local repo | Contents |
   |---|---|---|
-  | `main` | `05_ChatBook/` | README, this file, PROGRESS, DESIGN, `notes/` |
-  | `chatbook` + the 30 `agent/*` | `chatbook/` | the app; its local `main` pushes to `chatbook` |
-  | `harness` | `harness/` | `swarm.toml` and tasks; its local `main` pushes to `harness` |
+  | `project` | `05_ChatBook/` | README, this file, PROGRESS, DESIGN, `notes/`, `tools/publish-main.sh` |
+  | `chatbook` + the 30 `agent/*` | `chatbook/` | the app |
+  | `harness` | `harness/` | `swarm.toml` and the tasks |
+  | `main` (default) | none | **Generated.** The whole project in one tree: `project` at the root, `chatbook` in `chatbook/`, `harness` in `harness/`, merged with full history by `tools/publish-main.sh`. It is for browsing and download; never commit to it or work in a clone of it |
 
   The old `integration/*` branches and `harness/runs/` (the logs, which are git-ignored) were not
   pushed. `chatbook-oracle/` is a local clone and is never pushed.
@@ -129,7 +130,8 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 - **Owner's rules:**
   - Ask before downloading models.
   - Push to GitHub only when the owner asks (routine in 6.0). Never use `swarm run --push`: it
-    would push every worker branch, including rejected ones.
+    would push every worker branch, including rejected ones. Never commit to GitHub `main`
+    directly: `tools/publish-main.sh` generates it.
   - Leave `D:\Thesis_workspace` and `04_AgentSwarm` alone.
 - **Never edit** frame tests, task `acceptance/` folders or a `solution.patch` to make a worker pass.
   Never hand-write feature code into `chatbook`.
@@ -138,6 +140,7 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 
 ## 4. Key Artifacts (all under `E:\Playground_Projects\05_ChatBook`)
 - `README.md`: the GitHub front page, which explains the branch layout.
+- `tools/publish-main.sh`: rebuilds GitHub `main` from the three working branches.
 - `DESIGN.md`:
   - §3 the frame API;
   - §4 `swarm.toml`;
@@ -208,9 +211,11 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
    cd E:\Playground_Projects
    git clone https://github.com/ViewAJirapat/Glubokaya-Op.git 04_AgentSwarm
    ```
-2. **Get ChatBook.** Clone it as three repos. `--single-branch` keeps each clone to its own history:
+2. **Get ChatBook.** Clone it as three repos from the three working branches, not from `main`
+   (`main`'s `chatbook/` folder is not a repo the harness can use). `--single-branch` keeps each
+   clone to its own history:
    ```
-   git clone --single-branch https://github.com/ViewAJirapat/WebChat.git 05_ChatBook
+   git clone --single-branch -b project https://github.com/ViewAJirapat/WebChat.git 05_ChatBook
    cd 05_ChatBook
    git clone --single-branch -b chatbook https://github.com/ViewAJirapat/WebChat.git chatbook
    git clone --single-branch -b harness https://github.com/ViewAJirapat/WebChat.git harness
@@ -223,10 +228,12 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
    git -C chatbook config --add remote.origin.fetch "+refs/heads/agent/*:refs/remotes/origin/agent/*"
    git -C chatbook fetch origin "refs/heads/agent/*:refs/heads/agent/*"
    ```
-   In `harness`:
+   In `harness`, and in the root folder:
    ```
    git -C harness branch -m harness main
    git -C harness config remote.origin.push refs/heads/main:refs/heads/harness
+   git branch -m project main
+   git config remote.origin.push refs/heads/main:refs/heads/project
    ```
    Then make the oracle clone. Do this after the rename, so it gets `main`:
    ```
@@ -238,15 +245,19 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
    `OLLAMA_LLM_LIBRARY=cuda_v12` in 6.1 is only for the 1080 Ti. The token limits in section 3
    were measured on the 1080 Ti with 8k context; keep them unless you re-measure.
 
-**Push updates** (only when the owner asks). Each repo pushes to its own branch:
+**Push updates** (only when the owner asks). Each repo pushes to its own branch; then refresh
+`main`:
 ```
-git -C E:/Playground_Projects/05_ChatBook push                      # docs  -> main
+git -C E:/Playground_Projects/05_ChatBook push                      # docs  -> project
 git -C E:/Playground_Projects/05_ChatBook/chatbook push             # app   -> chatbook
 git -C E:/Playground_Projects/05_ChatBook/harness push              # tasks -> harness
 git -C E:/Playground_Projects/05_ChatBook/chatbook push origin <newly accepted agent/... branch>
+bash E:/Playground_Projects/05_ChatBook/tools/publish-main.sh      # merge all three into main
 ```
 On the original PC these remotes and push settings are already in place. Push new `agent/*`
-branches by name and only accepted ones; rejected attempts stay local.
+branches by name and only accepted ones; rejected attempts stay local. The publish script works in
+a throwaway clone, so it never touches the local repos. It only merges, and it pushes nothing when
+`main` is already current.
 
 ### 6.1 Start Ollama on the GPU (outside the sandbox)
 ```powershell

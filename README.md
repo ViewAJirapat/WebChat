@@ -13,35 +13,21 @@ What the app does:
 - a news feed with posts, likes and comments;
 - a Discover page (friends online, people you may know).
 
-## Branches
+## What's on `main`
 
-This repo holds three separate histories, one per folder of the project:
+`main` is the whole project in one tree, laid out like the project folder:
 
-| Branch | Folder | What it is |
-|---|---|---|
-| `main` | `05_ChatBook/` | This README, [HANDOFF.md](HANDOFF.md) (start here), [PROGRESS.md](PROGRESS.md), [DESIGN.md](DESIGN.md), `notes/` |
-| [`chatbook`](https://github.com/ViewAJirapat/WebChat/tree/chatbook) | `05_ChatBook/chatbook/` | The app: the stdlib Python JSON API, sqlite and the plain-JS UI. Feature code is in `src/chatbook/features/` |
-| `agent/*` | (branches of `chatbook`) | The 30 accepted feature branches written by the local LLM. Integrates need them as the regression list |
-| [`harness`](https://github.com/ViewAJirapat/WebChat/tree/harness) | `05_ChatBook/harness/` | `swarm.toml` and `tasks/cb-01..cb-30` (specs, hidden tests, reference patches) |
-
-The hidden tests are kept out of the app's history on purpose: the local model works in a checkout
-of `chatbook` and must never see them.
-
-## Get it
-
-```
-git clone --single-branch https://github.com/ViewAJirapat/WebChat.git 05_ChatBook
-cd 05_ChatBook
-git clone --single-branch -b chatbook https://github.com/ViewAJirapat/WebChat.git chatbook
-git clone --single-branch -b harness https://github.com/ViewAJirapat/WebChat.git harness
-```
-
-[HANDOFF.md](HANDOFF.md) section 6.0 has the full setup, including the agent branches, the oracle
-clone, the harness and Ollama.
+| Path | What it is |
+|---|---|
+| [`chatbook/`](chatbook/) | **The web app**: the stdlib Python JSON API, sqlite and the plain-JS UI. The features the local LLM wrote are in [`chatbook/src/chatbook/features/`](chatbook/src/chatbook/features/) |
+| [`harness/`](harness/) | `swarm.toml` and `tasks/cb-01..cb-30`: each task's spec, hidden tests and reference patch |
+| [HANDOFF.md](HANDOFF.md) | Start here to continue the work |
+| [PROGRESS.md](PROGRESS.md), [DESIGN.md](DESIGN.md), `notes/` | The step log, the blueprint, the review backlog |
+| `tools/publish-main.sh` | Rebuilds `main` from the working branches |
 
 ## Run the app
 
-Python 3.12+. From `chatbook/`:
+Python 3.12+, no other dependencies. From `chatbook/`:
 
 ```
 PYTHONPATH=src python -m chatbook --demo    # http://127.0.0.1:8000, seeds demo users
@@ -49,3 +35,18 @@ PYTHONPATH=src python -m chatbook --demo    # http://127.0.0.1:8000, seeds demo 
 
 On Windows PowerShell, set `$env:PYTHONPATH = "src"` first. The demo users are for local testing
 only.
+
+## Branches
+
+`main` is generated, so don't commit to it. Work happens on three branches, one per local repo,
+and `tools/publish-main.sh` merges them into `main` with their full history:
+
+| Branch | Local repo | Lands in `main` at |
+|---|---|---|
+| `project` | `05_ChatBook/` | the root |
+| `chatbook` (+ the 30 `agent/*` feature branches) | `05_ChatBook/chatbook/` | `chatbook/` |
+| `harness` | `05_ChatBook/harness/` | `harness/` |
+
+They stay separate because the local model works in a checkout of the `chatbook` repo. That
+checkout must never contain the hidden tests, and the harness needs the app as a repo of its own.
+To develop, clone the three branches as shown in [HANDOFF.md](HANDOFF.md) section 6.0, not `main`.

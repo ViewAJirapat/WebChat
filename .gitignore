@@ -1,5 +1,6 @@
-# chatbook/ and harness/ are their own git repos, pushed to the branches "chatbook" and
-# "harness" of the same GitHub repo (see README.md). chatbook-oracle/ is a local clone.
+# chatbook/ and harness/ are their own git repos (GitHub branches "chatbook" and "harness"); this
+# folder's repo is branch "project". GitHub "main" merges all three: tools/publish-main.sh.
+# chatbook-oracle/ is a local clone.
 /chatbook/
 /chatbook-oracle/
 /harness/
