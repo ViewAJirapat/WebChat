@@ -1,0 +1,23 @@
+[project]
+name = "chatbook"
+version = "0.1.0"
+description = "A Facebook-like chat app built by local LLM workers through the swarm harness."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
+python_version = "3.12"
+warn_return_any = false
