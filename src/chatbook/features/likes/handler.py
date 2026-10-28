@@ -23,7 +23,16 @@ GET /api/posts/{id}/likes
 Tables you may write: likes.
 """
 
-from chatbook.core.api import Request, Response, path_id, route, user_json, visible_post
+from chatbook.core.api import (
+    HTTPError,
+    Request,
+    Response,
+    can_see_post,
+    path_id,
+    route,
+    user_json,
+    visible_post,
+)
 
 
 @route("POST", "/api/posts/{id}/like")
@@ -43,8 +52,11 @@ def like_post(request: Request) -> Response:
 @route("DELETE", "/api/posts/{id}/like")
 def unlike_post(request: Request) -> Response:
     pid = path_id(request)
-    visible_post(request.db, pid, request.me.id)
-    request.db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, request.me.id)
+    gone = request.db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, request.me.id)
+    if not can_see_post(request.db, pid, request.me.id):
+        if gone == 0:
+            raise HTTPError(404, "post not found")
+        return Response(200, {"post_id": pid, "liked": False})
     n = int(request.db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid))
     return Response(200, {"post_id": pid, "like_count": n, "liked": False})
 
