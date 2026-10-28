@@ -53,6 +53,7 @@ ROUTES = [
     ("DELETE", "/api/comments/{id}", False, "comments"),
     ("GET", "/api/friends/online", False, "presence"),
     ("GET", "/api/friends/suggestions", False, "suggestions"),
+    ("GET", "/api/activity/hidden", False, "activity"),
 ]
 
 # (name, nav, order, public, file)
@@ -63,6 +64,7 @@ PAGES = [
     ("people", "People", 30, False, "page_people"),
     ("discover", "Discover", 35, False, "page_discover"),
     ("feed", "Feed", 40, False, "page_feed"),
+    ("activity", "Activity", 45, False, "page_activity"),
     ("profile", "Profile", 50, False, "page_profile"),
     ("chat", None, 100, False, "page_chat"),
     ("group_new", None, 100, False, "page_group_new"),

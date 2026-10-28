@@ -1,0 +1,77 @@
+title = "Activity: your comments and likes on posts you can no longer see"
+type = "feat"
+files = [
+  "src/chatbook/features/activity/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/activity/**"]
+prompt = """
+Implement the feature `activity` in `src/chatbook/features/activity/handler.py`. The file is a
+stub: keep its CONTRACT docstring unchanged at the top of the file, its @route line and the
+function name `hidden_activity`, and replace the `raise HTTPError(501, ...)` with the
+implementation below. Put your code below the CONTRACT docstring.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Start the function with `db = request.db` and `me = request.me.id`.
+Import require_user and user_json from chatbook.core.api (plus the Request, Response and route
+already imported). HTTPError is not needed: remove it from the import (an unused import fails
+the lint gate). If you annotate a dict, use dict[str, Any] with Any from typing.
+
+Why: after an unfriend, me can no longer see the former friend's posts, but me's own comments
+and likes stay on them. This route lists them, so that a page can offer to remove them.
+
+The CONTRACT (implement exactly this):
+Notation: db = request.db, me = request.me.id (write both as the function's first lines).
+Hidden post: its author is neither me nor a friend of me (e.g. after an unfriend).
+GET /api/activity/hidden                                                       (read-only)
+  cs = db.all("SELECT c.id, c.post_id, c.body, c.created_at, p.author_id AS post_author_id"
+              " FROM comments c JOIN posts p ON p.id = c.post_id"
+              " WHERE c.author_id = ? AND p.author_id != ? AND p.author_id NOT IN"
+              " (SELECT friend_id FROM friendships WHERE user_id = ?)"
+              " ORDER BY c.id DESC LIMIT 100", me, me, me)
+  ls = db.all("SELECT l.post_id, l.created_at, p.author_id AS post_author_id"
+              " FROM likes l JOIN posts p ON p.id = l.post_id"
+              " WHERE l.user_id = ? AND p.author_id != ? AND p.author_id NOT IN"
+              " (SELECT friend_id FROM friendships WHERE user_id = ?)"
+              " ORDER BY l.created_at DESC, l.post_id DESC LIMIT 100", me, me, me)
+  -> 200 {"comments": [{"id": r["id"], "post_id": r["post_id"],
+                        "post_author": user_json(require_user(db, r["post_author_id"])),
+                        "body": r["body"], "created_at": r["created_at"]} for r in cs],
+          "likes": [{"post_id": r["post_id"],
+                     "post_author": user_json(require_user(db, r["post_author_id"])),
+                     "created_at": r["created_at"]} for r in ls]}
+Only my own comments and likes; never the post's body, its counts or other users' rows.
+
+Copy both SQL texts exactly as shown, as adjacent string literals (never + or f-strings), with
+the parameters me, me, me (one for each ?).
+
+Details:
+- Hidden: the post exists and its author is neither me nor a current friend of me: a former
+  friend (whichever side unfriended), a friend of a friend, or someone never befriended (a
+  pending friend request is not a friendship). me is not in me's own friend list, hence
+  "p.author_id != ?". Friends again -> those rows leave the list.
+- Only me's own rows (comments with author_id = me, likes with user_id = me), never other
+  users' rows on the same posts. A row whose post no longer exists is not listed (the JOIN
+  drops it).
+- Order: comments by comment id descending (not by created_at); likes by the like's
+  created_at descending, equal created_at by post_id descending. At most 100 items per list
+  (the first 100 in that order). No paging, no "has_more", no query parameters, no body.
+- A comment item has exactly the keys "id", "post_id", "post_author", "body", "created_at";
+  "id", "body" and "created_at" are me's comment's, not the post's. A like item has exactly
+  the keys "post_id", "post_author", "created_at" (the time of me's like; a like has no id).
+- "post_author" is user_json of the post's author (post_author_id), never of me. Never send
+  the post's body, its like or comment counts, or any other post field.
+- Nothing hidden -> 200 {"comments": [], "likes": []}. Read-only: the handler writes nothing.
+
+Example: tess (id 1) and uri (id 2, "Uri Upton") were friends. uri wrote post 4 ("uri
+sails"); tess commented "fair winds" on it (comment 7, created_at 1700000002000) and liked it
+(created_at 1700000003000); then uri unfriended tess. tess also liked post 5 by vera, who is
+still her friend. With U = {"id": 2, "username": "uri", "display_name": "Uri Upton"}:
+  As tess: GET /api/activity/hidden -> 200 {"comments": [{"id": 7, "post_id": 4,
+  "post_author": U, "body": "fair winds", "created_at": 1700000002000}],
+  "likes": [{"post_id": 4, "post_author": U, "created_at": 1700000003000}]}
+  (post 5 is left out; the text "uri sails" is never sent.)
+
+Tables you may write: none (read-only).
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

@@ -47,6 +47,8 @@ stubs for every feature. Grafts and fixes:
 | 19 | Friends-only DMs and group adds, consistent in every UI entry point ("Message" shown only for friends). | feasibility; product judge | No dead-end 403s in the UI. |
 | 20 | Fallback engines limited to what is installed: `qwen2.5-coder:14b`, `:7b` (16k context). `qwen3-coder:30b` is **not pulled** on this PC (18 GB; ask the owner before downloading; 16 GB RAM makes it doubtful). The `claude` CLI is signed out. | own check (`ollama list`) | The fallback ladder must be real. |
 | 21 | **CONTRACT-preservation gate**: `tools/check_extra.py` fails any feature file that no longer begins with its CONTRACT block exactly as the frame has it (line endings aside), and prints the block to restore. The blocks live in a protected snapshot `tools/contracts.json`, generated from the stubs with `check_extra.py --write-contracts` (3.16 item 6). An autofix step, `check_extra.py --restore-contracts`, puts back a block deleted without a trace, since the printed block can be clipped when another stage also fails (section 4). | Wave 1 review (`wf_f84d1397-1dc`); its verifier | The cb-05 (friends) worker deleted its CONTRACT docstring; behaviour was right and every hidden test passed, so no gate caught it. The editor pass sees only the CONTRACT (row 2), so a retry on that file would run blind, and the in-repo spec is lost for later tasks and reviews. |
+| 22 | **Reopen a finished feature in place**: staff change only its CONTRACT block on `main` (and regenerate `tools/contracts.json`); the model then edits its own code below the block. A staff commit that resets the file to its new CONTRACT stub is the fallback (8.1 step 4). | Polish P1 (`notes/polish-p1-design.md`, Decision 1; all 3 drafts) | Every task's base is `main`, so a stub reset would have to land on `main` itself: the feature would answer 501 for the whole wave, and stay broken if the task fails. In place keeps `main` working, and the baseline check still holds because the new hidden tests fail on the old code (checked). |
+| 23 | **A reopened task supersedes its old branch.** It carries the old suite (only the cases the owner's decision contradicts are changed); the old task folder is not touched. The regression list is the file `harness/accepted.txt`; an old branch moves to its retired block only once its replacement is accepted. | Polish P1 (Decision 12; owner question 1) | Keeps the rule "never edit task acceptance folders". `integrate` runs only the suites of the branches it merges, so retiring an old branch early would leave a held-back feature with no regression suite. A retired branch listed by mistake fails integrate loudly on its known cases. |
 
 ---
 
@@ -82,6 +84,14 @@ websocket.
 Feed (posts by you and your friends, like/unlike, comments, delete own post), single post page with
 comments, Discover page (friends online in the last 60 s; people you may know by mutual friends).
 
+**Polish P1 (after the stretch; backlog items 10(a) and 11, tasks cb-31..cb-34 in 6.5):**
+- After an unfriend you can still remove your own like from, and delete your own comment on, the
+  former friend's posts. Other users' comments there stay out of reach (404).
+- **My activity** (nav "Activity"): your own comments and likes on posts you can no longer see,
+  each with a Delete or Unlike button. It shows the post author's name (a link to their profile)
+  and your comment text, never the post's text or counts. At most the newest 100 of each.
+- A missing comment and a comment on a post you can't see give the same 404.
+
 ### 1.3 Page map
 
 | Page | Title | Nav label (order) | Opened from | Feature folder |
@@ -92,6 +102,7 @@ comments, Discover page (friends online in the last 60 s; people you may know by
 | `people` | People | People (30) | nav, top-bar search | `page_people` |
 | `discover` | Discover | Discover (35) | nav (stretch) | `page_discover` |
 | `feed` | Feed | Feed (40) | nav (stretch) | `page_feed` |
+| `activity` | My activity | Activity (45) | nav (polish P1) | `page_activity` |
 | `profile` | Profile | Profile (50) | nav (own), any name link (`{id}`) | `page_profile` |
 | `chat` | Chat | - | inbox item, Message buttons (`{id, limit?}`) | `page_chat` |
 | `group_new` | New group | - | inbox "New group" | `page_group_new` |
@@ -209,7 +220,10 @@ Target size: ~4.5k lines including tests, stubs, CSS and JS.
   403 forbidden, 404 not found / not a member / not visible (existence is not leaked),
   405 wrong method (frame), 409 conflict, 413 body too large (frame), 500 internal (frame).
 - **Errors** are always `{"error": "<message>"}`. Hidden tests check status codes and the exact
-  success JSON, never error message text.
+  success JSON, never error message text, with one exception (since P1, backlog item 11): where
+  a spec says two errors must look the same (a hidden thing and a missing thing), a test compares
+  the two error bodies with each other, never with a literal. Such a spec quotes the exact
+  `HTTPError` to raise, and its prompt says so instead of "error message texts are not tested".
 - **Shared JSON shapes** (built only by frame helpers, so all features agree):
 
 | Name | Shape | Built by |
@@ -221,6 +235,8 @@ Target size: ~4.5k lines including tests, stubs, CSS and JS.
 | P | `{"id", "username", "display_name", "bio", "joined_at", "relationship", "friend_count", "request_id": int|null}` | profiles feature (spec) |
 | Post | `{"id", "author": U, "body", "created_at", "like_count", "comment_count", "liked": bool}` | posts feature (spec) |
 | K | `{"id", "post_id", "author": U, "body", "created_at"}` | comments feature (spec) |
+| AC | `{"id", "post_id", "post_author": U, "body", "created_at"}`: my comment on a post I can no longer see (`body`, `created_at` are the comment's) | activity feature (spec, P1) |
+| AL | `{"post_id", "post_author": U, "created_at"}`: my like on such a post (a like has no id; `created_at` is the like's) | activity feature (spec, P1) |
 
 - `title` of a direct conversation = the other member's `display_name` ("Unknown" if none);
   of a group = the stored title. `updated_at` = the last message's `created_at`, else the
@@ -403,7 +419,14 @@ def relationship(db: Db, me: int, other: int) -> str
 def friend_ids(db: Db, user_id: int) -> list[int]                   # ascending
 def visible_post(db: Db, post_id: int, viewer_id: int) -> Row
     # the posts row; 404 "post not found" unless the author is the viewer or a friend of the viewer
+def can_see_post(db: Db, post_id: int, viewer_id: int) -> bool     # added in P1
+    # True if the post exists and its author is the viewer or a friend of the viewer; never
+    # raises. A post is hidden from me when this is False (e.g. after an unfriend)
 ```
+
+`can_see_post` is appended below `visible_post`, which stays byte for byte (posts, likes and
+comments call it). Since P1 two features copy `visible_post`'s exact `HTTPError(404, "post not
+found")` (3.1 exception), so `tests/test_social.py::test_can_see_post` pins that text too.
 
 ### 3.6 `core/chat.py`
 
@@ -512,6 +535,7 @@ __all__ = [
     "body_str", "body_id", "body_ids", "path_id", "query_str", "query_int", "query_opt_int",
     "user_json", "get_user", "require_user", "create_user", "check_password", "new_session",
     "are_friends", "befriend", "unfriend", "relationship", "friend_ids", "visible_post",
+    "can_see_post",                                                    # added in P1
     "create_conversation", "find_direct", "require_member", "member_ids", "add_member",
     "remove_member", "post_message", "message_json", "mark_read", "unread_count",
     "conversation_json",
@@ -1001,8 +1025,9 @@ report). Two more modes, for item 6: `--write-contracts` (staff) and `--restore-
 
 ### 3.17 Feature stubs and the route/page tables
 
-The frame commit contains all 30 feature folders. Backend folders: `__init__.py` (one-line
-docstring) + `handler.py`. UI folders: `__init__.py` + `ui.js`.
+The frame commit contains all 30 feature folders (32 since the P1 frame commit, which added the
+stubs `activity` and `page_activity`). Backend folders: `__init__.py` (one-line docstring) +
+`handler.py`. UI folders: `__init__.py` + `ui.js`.
 
 Backend stub template (the CONTRACT is the task's spec, condensed; lines <= 100 chars):
 
@@ -1079,13 +1104,14 @@ Route table (asserted exactly by `tests/test_route_map.py`: method, pattern, pub
 | GET | `/api/posts/{id}` | | posts | cb-23 |
 | DELETE | `/api/posts/{id}` | | posts | cb-23 |
 | POST | `/api/posts/{id}/like` | | likes | cb-24 |
-| DELETE | `/api/posts/{id}/like` | | likes | cb-24 |
+| DELETE | `/api/posts/{id}/like` | | likes | cb-24, changed by cb-31 (P1) |
 | GET | `/api/posts/{id}/likes` | | likes | cb-24 |
 | GET | `/api/posts/{id}/comments` | | comments | cb-25 |
 | POST | `/api/posts/{id}/comments` | | comments | cb-25 |
-| DELETE | `/api/comments/{id}` | | comments | cb-25 |
+| DELETE | `/api/comments/{id}` | | comments | cb-25, changed by cb-32 (P1) |
 | GET | `/api/friends/online` | | presence | cb-26 |
 | GET | `/api/friends/suggestions` | | suggestions | cb-27 |
+| GET | `/api/activity/hidden` | | activity | cb-33 (P1) |
 
 Page table (asserted exactly from `uirun` `load_all`: name, nav, order, public, file): see 1.3,
 with `order` 100 for pages without nav, and `badges` registering no page.
@@ -1099,7 +1125,8 @@ group_members `add_member_route`, `leave_group`; conversations `list_conversatio
 updates `get_updates`; profiles `get_profile`, `update_profile`; posts `create_post`, `get_feed`,
 `get_post`, `delete_post`; likes `like_post`, `unlike_post`, `list_likes`; comments
 `list_comments`, `add_comment`, `delete_comment`; presence `online_friends`; suggestions
-`friend_suggestions`. (`add_member_route` avoids shadowing the imported `add_member`.)
+`friend_suggestions`; activity `hidden_activity` (P1). (`add_member_route` avoids shadowing the
+imported `add_member`.) The P1 page `activity` (`page_activity`) is in the page map (1.3).
 
 ### 3.18 Worker documentation (`docs/`, protected, passed read-only per task)
 
@@ -1182,10 +1209,17 @@ shapes M and C, tables `conversations(id, kind, title, direct_key, created_by, c
 last_message_id)`, `members(conversation_id, user_id, joined_at, last_read_id)`,
 `messages(id, conversation_id, sender_id, body, created_at)`.
 
-**`docs/api/posts.md`** (~15 lines): `visible_post(db, post_id, viewer_id) -> dict` (404 unless
+**`docs/api/posts.md`** (~16 lines): `visible_post(db, post_id, viewer_id) -> dict` (404 unless
 author is the viewer or a friend); tables `posts(id, author_id, body, created_at)`,
 `likes(post_id, user_id, created_at)` (PK post_id, user_id), `comments(id, post_id, author_id,
-body, created_at)`; plus `friendships` for feed queries.
+body, created_at)`; plus `friendships` for feed queries. Since P1, under `## Helper` right after
+the two `visible_post` lines:
+
+```
+can_see_post(db, post_id, viewer_id) -> bool
+    True if the post exists and its author is the viewer or a friend of the viewer;
+    never raises. A post is hidden from me when this is False (e.g. after an unfriend)
+```
 
 **`docs/ui.md`** (~90 lines, ~1.1k tokens), content:
 
@@ -1289,6 +1323,9 @@ feature implementation, except the staff end-to-end flow tests added after a wav
   does not block others, silent and stalled sockets dropped after the handler timeout.
 - `test_store.py` (tuple/list params, run/page semantics), `test_validate.py` (every row of 3.7),
   `test_users.py`, `test_social.py`, `test_chat.py` (every function and shape of 3.4-3.6).
+  `test_social.py::test_can_see_post` (P1): self, friend, friend of a friend, ex-friend, missing
+  id, friends again; for each case `visible_post` agrees, and its 404 is exactly
+  `(404, "post not found")`, the text two features copy since P1 (3.5).
 - `test_testing.py`: every `Client` helper and `run_page` against `tests/fixtures/sample_page.js`.
 - `test_ui_runtime.py`: the sample page through `run_page`: load/render, poll on tick, refresh,
   form reset, field-text preservation across a poll, `ApiError` toast and no error record,
@@ -1326,6 +1363,9 @@ feature implementation, except the staff end-to-end flow tests added after a wav
 - Added by staff after waves: `test_flow_social.py` (after W1: register, login, search, request,
   accept, unfriend over HTTP), `test_flow_chat.py` (after W2: dm, group, send, history, read,
   updates), `test_flow_feed.py` (after W4).
+
+Count: 290 frame tests at the end of the stretch (`main` @ `87de89e`); **291** since the P1 frame
+commit `1fbb04a` (`test_can_see_post`; the route-map and api-doc tables grew in place).
 
 ---
 
@@ -1510,6 +1550,10 @@ The harness folder is its own git repo (versions task specs, hidden tests and pa
 
 ## 5. `AGENTS.md` (product repo, verbatim; ~45 lines, ~600 tokens)
 
+The bullet "Some tasks change a feature that already works" was added in the P1 frame commit
+(`1fbb04a`): AGENTS.md is passed with `--read`, so it reaches the editor pass, which never sees
+the task prompt (P1 Decision 13).
+
 ```markdown
 # Rules for ChatBook workers
 
@@ -1521,6 +1565,9 @@ everything passes. The task names the one feature folder you may change.
   stub. Keep its `@route(...)` lines and function names, or its `CB.page(...)` name, nav and
   order, exactly as they are.
 - The file must still begin with its CONTRACT block, unchanged; your code goes below it.
+- Some tasks change a feature that already works: the file then holds working code below a
+  changed CONTRACT block. Change only what the task names, so the code matches the CONTRACT
+  again; keep everything else exactly as it is.
 - Implement exactly what the CONTRACT and the task say: routes, JSON keys, status codes, the
   order of checks, list order, texts and labels.
 - Keep the file under 120 lines. Add no files unless the task asks.
@@ -1840,6 +1887,7 @@ Each task: scope `["src/chatbook/features/<folder>/**"]`; files = the stub + the
 | W3 (MVP done) | cb-17..cb-22 | inbox, chat, new group, group settings, profile page, badges | **MVP smoke test passes** |
 | W4 stretch | cb-23..cb-27 | posts/feed, likes, comments, presence, suggestions | merged |
 | W5 stretch | cb-28..cb-30 | feed page, post page, discover page | merged, final smoke |
+| P1 polish | cb-31..cb-34 | likes and comments reopened in place, activity API, My activity page | merged together (merge rule below), P1 smoke |
 
 Every task's hidden tests depend only on the frame (Client seeding or mocked API), so any order
 is valid for the harness; the waves are calibration, product checkpoints and merge batches.
@@ -2524,6 +2572,10 @@ Hidden tests: `pid = c.make_post(b)`, `c.befriend(a, b)`, `c.befriend(b, d)`. a 
 Likers: `c.like(d, p2)`, tick, `c.like(a, p2)` -> `[d.json, a.json]`. Stranger -> 404 on all;
 `999`, `x` -> 404.
 
+**Superseded by cb-31-likes** (Polish P1, below): DELETE now lets me remove my own like from a
+post I can no longer see. The cb-24 task folder stays byte for byte; cb-31 carries its suite.
+The cb-24 branch leaves `harness/accepted.txt` only once cb-31 is accepted.
+
 **cb-25 comments: list, add, delete** (M, ~50; `comments`; `base.md`, `posts.md`)
 
 ```
@@ -2554,6 +2606,11 @@ a comments `"  nice "` -> 201 body "nice", exact K. List ordered by id with auth
 Stranger -> 404 (GET, POST); `999` -> 404. Deletes: d cannot delete a's comment (403); a can;
 b (post author) can delete d's comment; unknown comment `999` -> 404; `c.rows` confirm. 400:
 empty, 1001 chars.
+
+**Superseded by cb-32-comments** (Polish P1, below): DELETE now lets me delete my own comment on
+a post I can no longer see, and a missing comment answers "post not found". The cb-25 task
+folder stays byte for byte; cb-32 carries its suite. The cb-25 branch leaves
+`harness/accepted.txt` only once cb-32 is accepted.
 
 **cb-26 presence: friends online** (S, ~20; `presence`; `base.md`, `social.md`)
 
@@ -2703,6 +2760,370 @@ mocked id. `tick 15000` -> both GETs again. Both empty -> "Nobody is online", "N
 
 ---
 
+#### Polish P1 (after the stretch: backlog items 10(a) and 11)
+
+The owner chose option (a) for backlog item 10 plus a new "My activity" page (2026-10-28), and
+P1 also fixes item 11. The full design is `notes/polish-p1-design.md`: decisions, the leak table,
+the old-test conflicts, every hidden test, the cb-31 prompt in full and the runbook (its G.4).
+Its open questions are answered. This section is the spec summary.
+
+**Status: done (2026-10-28).** cb-31..cb-34 passed 4/4 on the first try and merged together as
+`chatbook` `main` @ `b21aa4b` (PROGRESS.md).
+
+**Frame commit (done):** `chatbook` `main` @ `1fbb04a` (parent `87de89e`), "P1 frame:
+can_see_post, own like/comment removable after unfriend, one 404, activity stubs". It adds
+`can_see_post` (3.5, 3.10, 3.18, 3.19), the two new stubs, the route and page rows (3.17, 1.3),
+the AGENTS.md bullet (5), and the new CONTRACT blocks of likes and comments, with their code
+unchanged. `tools/contracts.json` now holds 32 blocks (2 added, 2 changed, 0 removed), and there
+are 291 frame tests. The blocks below are copied from that commit.
+
+| Id | Kind / `type` | Files (editable first, then read-only) | Scope | Expected result |
+|---|---|---|---|---|
+| cb-31-likes | backend, in place / `fix` | `src/chatbook/features/likes/handler.py`, `docs/api/base.md`, `docs/api/posts.md` | `src/chatbook/features/likes/**` | `unlike_post` +5/-2 lines, the import gains 2 names; file about 75 lines |
+| cb-32-comments | backend, in place / `fix` | `.../comments/handler.py`, base.md, posts.md | `.../comments/**` | `delete_comment` +5/-4, no new import; file about 96 lines |
+| cb-33-activity | backend, stub / `feat` | `.../activity/handler.py`, base.md, posts.md | `.../activity/**` | reference: 75 lines |
+| cb-34-page_activity | UI, stub / `feat` | `.../page_activity/ui.js`, `docs/ui.md` | `.../page_activity/**` | reference: 50 lines |
+
+Titles: cb-31 "Likes: remove your own like from a post you can no longer see"; cb-32 "Comments:
+delete your own comment on a hidden post; one 404 for hidden and missing"; cb-33 "Activity: your
+comments and likes on posts you can no longer see"; cb-34 "My activity page". The ids are new
+numbers, not `cb-24b`: `task.find_tasks` matches prefixes, so `cb-24` would become ambiguous.
+
+**In-place tasks (cb-31, cb-32; row 22):**
+- Staff changed only the CONTRACT docstring on `main`. The code below it is still the model's
+  cb-24 / cb-25 code. The new hidden tests fail on it, so the baseline check accepts the task.
+- The prompt says that the file always changes. It quotes the current body as "wrong now" next
+  to the new body in full. An attempt that changes nothing gets no gates and no hidden tests,
+  only "No file changes remain", and an empty diff never counts as stuck. So the prompt alone
+  must show that the file has to change.
+- The Notation line of both reopened blocks says the code writes `request.db` and
+  `request.me.id`. The block reaches the editor pass; cb-23 lost an iteration to undefined
+  `db`/`me`.
+- The prompt must not end with "error message texts are not tested" alone. It ends: "JSON keys,
+  status codes and list order must match exactly. Error texts are not tested, except this one:
+  the 404 answers above must be exactly HTTPError(404, "post not found")." (3.1 exception.)
+- The acceptance folder carries the old suite, `test_cb31_from_cb24.py` or
+  `test_cb32_from_cb25.py` (row 23). It opens with a header comment ("Carried from cb-24-likes
+  (harness 2ecb8e5). Changed per owner decision 2026-10-28 (backlog 10a, 11) ..."). Only the one
+  contradicted case changes; everything else is verbatim. The new suite sits next to it.
+
+**cb-31-likes: remove your own like from a post you can no longer see** (S, in place, ~75;
+`likes`; `base.md`, `posts.md`)
+
+```
+"""likes: like, unlike and list likers.
+
+CONTRACT (keep this docstring; implement exactly this):
+Notation: db = request.db, me = request.me.id (the code below writes request.db and request.me.id).
+n = int(db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid)) after the change
+POST /api/posts/{id}/like
+  pid = path_id(request); visible_post(db, pid, me)                  (404)
+  db.run("INSERT OR IGNORE INTO likes (post_id, user_id, created_at) VALUES (?, ?, ?)",
+         pid, me, request.now)
+  -> 200 {"post_id": pid, "like_count": n, "liked": True}
+DELETE /api/posts/{id}/like   (me may remove its own like even from a post me can't see)
+  pid = path_id(request)                                             (404)
+  gone = db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, me)
+  if not can_see_post(db, pid, me):      (post missing, or author neither me nor a friend)
+    gone == 0 -> raise HTTPError(404, "post not found")    (exactly the 404 of visible_post)
+    -> 200 {"post_id": pid, "liked": False}                (no like_count: a hidden post)
+  -> 200 {"post_id": pid, "like_count": n, "liked": False}
+GET /api/posts/{id}/likes
+  pid = path_id(request); visible_post(db, pid, me)                  (404)
+  rows = db.all("SELECT u.* FROM likes l JOIN users u ON u.id = l.user_id"
+                " WHERE l.post_id = ? ORDER BY l.created_at, u.id", pid)
+  -> 200 {"users": [user_json(r) for r in rows]}
+Tables you may write: likes.
+"""
+```
+
+Prompt notes (design note G.1, about 530 words): change only `unlike_post` and the import line;
+keep the docstring, the three `@route` lines, the function names, `like_post` and `list_likes`.
+The new body, quoted after the current one:
+
+```
+    pid = path_id(request)
+    gone = request.db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, request.me.id)
+    if not can_see_post(request.db, pid, request.me.id):
+        if gone == 0:
+            raise HTTPError(404, "post not found")
+        return Response(200, {"post_id": pid, "liked": False})
+    n = int(request.db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid))
+    return Response(200, {"post_id": pid, "like_count": n, "liked": False})
+```
+
+Imports: add `HTTPError` and `can_see_post`, and keep `visible_post`. Details: a hidden-post 200
+has exactly the keys `post_id` and `liked` (no count leaks); with no like of mine it is exactly
+`visible_post`'s 404; a visible post answers as before; POST and GET do not change. On a hidden
+post the first call answers 200 and later calls 404. Answering 200 every time would let anyone
+probe whether hidden posts exist.
+
+Hidden tests (`test_cb31_likes.py`):
+- An ex-friend removes an own like while 2 other likes exist: exactly `(200, {"post_id": pid,
+  "liked": False})`. Only that row is gone, and my like on another hidden post stays.
+- The unfriend comes from either side.
+- A never-friend's seeded like: 200.
+- A second removal: 404. Its `(status, json)` equals `DELETE` and `POST /api/posts/9999/like`
+  (POST gives a body made by `visible_post`; DELETE compared with DELETE alone would pass any
+  text).
+- A hidden post without my like (stranger, friend of a friend, ex-friend who never liked): 404,
+  equal to `GET /api/posts/<it>/likes` and to `DELETE /api/posts/9999/like`. No rows change.
+- After the removal, POST and GET still answer 404.
+- Friends again: 200 with the real `like_count`.
+- A post deleted the normal way: 404.
+- The author unlikes their own post with no friends: 200 with `like_count`.
+- The module imports.
+
+Carried suite: `test_former_friend_gets_404_and_keeps_old_like` becomes
+`test_former_friend_cannot_like_or_list`, parametrized over `[("POST", "like"), ("GET",
+"likes")]` with `ids=["post", "get"]`.
+
+**cb-32-comments: delete your own comment on a hidden post; one 404 for hidden and missing** (S,
+in place, ~96; `comments`; `base.md`, `posts.md`)
+
+```
+"""comments: list, add and delete comments.
+
+CONTRACT (keep this docstring; implement exactly this):
+Notation: db = request.db, me = request.me.id (the code below writes request.db and request.me.id).
+K(row) = {"id": row["id"], "post_id": row["post_id"],
+          "author": user_json(require_user(db, row["author_id"])), "body": row["body"],
+          "created_at": row["created_at"]}
+GET /api/posts/{id}/comments
+  pid = path_id(request); visible_post(db, pid, me)                  (404)
+  -> 200 {"comments": [K(r) for rows WHERE post_id = ? ORDER BY id]}
+POST /api/posts/{id}/comments  body {"body"}
+  pid = path_id(request); visible_post(db, pid, me)                  (404)
+  text = body_str(request, "body", max_len=1000)
+  cid = db.run("INSERT INTO comments (post_id, author_id, body, created_at)"
+               " VALUES (?, ?, ?, ?)", pid, me, text, request.now)
+  -> 201 {"comment": K({"id": cid, "post_id": pid, "author_id": me, "body": text,
+                        "created_at": request.now})}
+DELETE /api/comments/{id}   (me may delete its own comment even on a post me can't see)
+  cid = path_id(request); row = db.one("SELECT * FROM comments WHERE id = ?", cid)
+  row is None -> raise HTTPError(404, "post not found")    (exactly the 404 of visible_post)
+  if row["author_id"] != me:
+    post = visible_post(db, row["post_id"], me)                      (404)
+    post["author_id"] != me -> 403
+  DELETE FROM comments WHERE id = ?  -> 200 {"deleted": cid}
+Tables you may write: comments.
+"""
+```
+
+Prompt notes (design note G.2, about 500 words): change only `delete_comment`; keep the
+docstring, the `@route` lines, the function names, `comment_json`, `list_comments` and
+`add_comment`. "Why" names both goals: deleting my own comment after an unfriend, and one 404
+so nobody can find out which hidden comment ids exist. The 9 current lines are quoted as "wrong
+now" (they say "comment not found" and call `visible_post` for every comment), then the new
+body:
+
+```
+    cid = path_id(request)
+    row = request.db.one("SELECT * FROM comments WHERE id = ?", cid)
+    if row is None:
+        raise HTTPError(404, "post not found")
+    if row["author_id"] != request.me.id:
+        post = visible_post(request.db, row["post_id"], request.me.id)
+        if post["author_id"] != request.me.id:
+            raise HTTPError(403, "forbidden")
+    request.db.run("DELETE FROM comments WHERE id = ?", cid)
+    return Response(200, {"deleted": cid})
+```
+
+No new imports. For someone else's comment the old rules stay: 404 when the post is hidden,
+403 when me wrote neither the comment nor the post. GET and POST do not change. The example
+uses fresh names (not rosa/sam/tia/ugo/vik), and the prompt closes as cb-31's does.
+
+Hidden tests (`test_cb32_comments.py`):
+- An ex-friend deletes an own comment: `(200, {"deleted": cid})`. The other comments stay.
+- Either side unfriends.
+- A never-friend's seeded own comment on a stranger's post: 200.
+- An ex-friend deleting someone else's comment on the hidden post: 404 (not 403). Nothing
+  changes.
+- Item 11: for a stranger, a friend of a friend and an ex-friend, the hidden comment id, `999`
+  and an already-deleted id all give 404 with equal bodies. They are also compared with the
+  body of `GET /api/posts/<hidden>/comments` by the same actor, which `visible_post` itself
+  produces; DELETE bodies compared only with each other would let a wrong text such as
+  "comment not found" pass (cb-32 review).
+- My own hidden comment deleted twice: the second body equals the missing-id body.
+- Friends again: someone else's comment on that post gives 403 again.
+- The post's author still deletes an ex-friend's comment on their own post: 200.
+- The module imports.
+
+Carried suite: in `test_delete_when_the_post_is_hidden_is_404`, the case `unfriended_author`
+becomes `unfriended_other`. The setup adds `by_tia = c.comment(tia, sams, "nice view")`; after
+`c.unfriend(rosa, sam)`, rosa tries to delete `by_tia` and gets 404, with nothing deleted. That
+parametrize also gets `ids=`.
+
+**cb-33-activity: your comments and likes on posts you can no longer see** (M, stub, ~75;
+`activity`; `base.md`, `posts.md`)
+
+```python
+"""activity: my comments and likes on posts I can no longer see.
+
+CONTRACT (keep this docstring; implement exactly this):
+Notation: db = request.db, me = request.me.id (write both as the function's first lines).
+Hidden post: its author is neither me nor a friend of me (e.g. after an unfriend).
+GET /api/activity/hidden                                                       (read-only)
+  cs = db.all("SELECT c.id, c.post_id, c.body, c.created_at, p.author_id AS post_author_id"
+              " FROM comments c JOIN posts p ON p.id = c.post_id"
+              " WHERE c.author_id = ? AND p.author_id != ? AND p.author_id NOT IN"
+              " (SELECT friend_id FROM friendships WHERE user_id = ?)"
+              " ORDER BY c.id DESC LIMIT 100", me, me, me)
+  ls = db.all("SELECT l.post_id, l.created_at, p.author_id AS post_author_id"
+              " FROM likes l JOIN posts p ON p.id = l.post_id"
+              " WHERE l.user_id = ? AND p.author_id != ? AND p.author_id NOT IN"
+              " (SELECT friend_id FROM friendships WHERE user_id = ?)"
+              " ORDER BY l.created_at DESC, l.post_id DESC LIMIT 100", me, me, me)
+  -> 200 {"comments": [{"id": r["id"], "post_id": r["post_id"],
+                        "post_author": user_json(require_user(db, r["post_author_id"])),
+                        "body": r["body"], "created_at": r["created_at"]} for r in cs],
+          "likes": [{"post_id": r["post_id"],
+                     "post_author": user_json(require_user(db, r["post_author_id"])),
+                     "created_at": r["created_at"]} for r in ls]}
+Only my own comments and likes; never the post's body, its counts or other users' rows.
+"""
+
+from chatbook.core.api import HTTPError, Request, Response, route
+
+
+@route("GET", "/api/activity/hidden")
+def hidden_activity(request: Request) -> Response:
+    raise HTTPError(501, "not implemented")
+```
+
+`__init__.py`: `"""activity: my comments and likes on posts I can no longer see."""`. Not public
+(the frame answers 401 when logged out), no parameters, read-only. The answer is
+`{"comments": [AC], "likes": [AL]}` (3.1). `p.author_id != ?` is needed because I am not in my
+own friend list. The visibility rule is SQL, the same rule as the cb-23 feed, so the limit is
+exact and there are no per-row visibility queries. There is no paging and no `has_more`:
+deleting items brings older ones into view.
+
+Prompt notes (as cb-27): keep the CONTRACT docstring, the `@route` line and the function name
+`hidden_activity`, and replace the `raise HTTPError(501, ...)`. Then the CONTRACT verbatim,
+plus:
+- start the function with `db = request.db` and `me = request.me.id`;
+- copy both SQL texts exactly as shown, as adjacent string literals (never `+` or f-strings),
+  with the parameters `me, me, me`;
+- import `require_user` and `user_json`. `HTTPError` is not needed, so remove it from the
+  import (an unused import fails the lint gate). An annotated dict is `dict[str, Any]`;
+- details: what "hidden" means; the order and the 100 limit; `post_author` is the post's
+  author, not me; `body` and `created_at` are my comment's; never the post's body or counts;
+- an example with fresh names.
+
+Hidden tests (`test_cb33_activity.py`). Cast: kai = me, lena = a friend, mo and nia =
+ex-friends, omar = never a friend, pia = a friend of mo only, plus my own post.
+- Exact JSON for a mixed scenario: only mo's and nia's posts are listed. My own post, lena's
+  post and other users' rows are left out.
+- The post body never appears in `r.text`, and each item's key set is exact.
+- Comments come in `id DESC`, even when `created_at` is rewritten so that a `created_at` order
+  would fail.
+- Likes come in `created_at DESC`, ties broken by `post_id DESC`.
+- Both unfriend directions.
+- Activity made while friends appears after the unfriend, and disappears when we are friends
+  again.
+- `post_author` follows a `display_name` change.
+- Cap: 101 comments and 102 likes give 100 each.
+- Empty: `{"comments": [], "likes": []}`.
+- Read-only: the table snapshots are the same after the request. The viewer's `last_seen_at` is
+  left out, because the App's `touch` sets it on every logged-in request.
+- Orphan rows (the post row deleted, its likes and comments kept) are not listed.
+- 401 without login.
+- The module imports.
+
+**cb-34-page_activity: My activity page** (M, stub, ~50; `page_activity`; `ui.md`)
+
+```js
+// page_activity: my comments and likes on posts I can no longer see.
+// CONTRACT (keep this comment; implement exactly this):
+// CB.page('activity', {title: 'My activity', nav: 'Activity', order: 45, load, render})  no poll
+// load(): return await CB.api('GET', '/api/activity/hidden')
+// render(d) -> CB.el('div', {class: 'stack'}, in this order:
+//   CB.el('p', {class: 'muted'}, 'Your comments and likes on posts you can no longer see'),
+//   CB.el('h2', {}, 'Comments (' + d.comments.length + ')'),
+//   d.comments.length ? d.comments.map((k) => CB.el('div', {class: 'item'},
+//       CB.el('span', {}, 'You commented on a post by'), CB.userLink(k.post_author),
+//       CB.el('span', {}, k.body), CB.el('small', {class: 'muted'}, CB.time(k.created_at)),
+//       CB.el('button', {testid: 'delete-' + k.id, onclick: async () => {
+//           await CB.api('DELETE', '/api/comments/' + k.id); CB.refresh(); }}, 'Delete')))
+//     : CB.el('p', {class: 'muted'}, 'No comments to remove'),
+//   CB.el('h2', {}, 'Likes (' + d.likes.length + ')'),
+//   d.likes.length ? d.likes.map((l) => CB.el('div', {class: 'item'},
+//       CB.el('span', {}, 'You liked a post by'), CB.userLink(l.post_author),
+//       CB.el('small', {class: 'muted'}, CB.time(l.created_at)),
+//       CB.el('button', {testid: 'unlike-' + l.post_id, onclick: async () => {
+//           await CB.api('DELETE', '/api/posts/' + l.post_id + '/like'); CB.refresh(); }},
+//         'Unlike')))
+//     : CB.el('p', {class: 'muted'}, 'No likes to remove'))
+// Server answer: {comments: [{id, post_id, post_author: U, body, created_at}],
+//   likes: [{post_id, post_author: U, created_at}]}   (a like has no id: use l.post_id)
+// No link to the post (its page answers 404 now). No toast, no try/catch.
+
+CB.page('activity', {
+  title: 'My activity',
+  nav: 'Activity',
+  order: 45,
+  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
+});
+```
+
+`__init__.py`: `"""page_activity: my comments and likes on posts I can no longer see."""`. After
+a click the page sends the DELETE, then calls `CB.refresh()`, with no toast and no navigation.
+On an error answer `CB.api` shows a toast and stops, so no refresh follows. `CB.userLink` opens
+the author's profile, where "Add friend" would bring the post back. There is no confirm (P2 item
+12 should cover this page too).
+
+Prompt notes (as cb-30): keep the block and `CB.page('activity', ...)` with its title, nav and
+order; replace `render` with `load` and `render`; one blank line after the block. Then the
+CONTRACT verbatim, plus: "no `poll`, no `CB.avatar`, no `try`/`catch`, no toast, no request
+other than the 3 listed, no link to the post; a like has no id, use `l.post_id`". An example
+with fresh names, and the usual closing line ("Texts, headings, classes, testids, button
+labels, request paths/bodies and element order must match exactly; error message texts are not
+tested.").
+
+Hidden tests (`test_cb34_page_activity.py`). Fixtures: comments 31 and 27 on posts by ERIN and
+FRANK, one body with `<b>`; likes on posts 9 and 6. Every test asserts `errors == []` and
+`unmatched == []`.
+- Registration is exact (`order` 45, `nav` 'Activity', `public` False).
+- Exactly one `GET /api/activity/hidden`; `nav == []`; `toasts == []`.
+- Text order (`text.index`): the intro, `Comments (2)`, the comment rows, `Likes (2)`, the like
+  rows.
+- Labels exactly `["Delete", "Delete", "Unlike", "Unlike"]`; testids `delete-31`, `delete-27`,
+  `unlike-9`, `unlike-6`.
+- `click_id delete-27` gives the calls `[GET, ["DELETE", "/api/comments/27", None], GET]`, with
+  no nav and no toast.
+- `click_id unlike-6` gives `DELETE /api/posts/6/like`, then a GET.
+- A DELETE answered 404 gives one toast and only one GET.
+- Both lists empty: `Comments (0)`, `No comments to remove`, `Likes (0)`, `No likes to remove`,
+  and no buttons.
+- Only comments; only likes.
+- Clicking an author's name gives `nav == [["profile", {"id": "5"}]]`.
+- `tick 60000`: still one GET (no poll).
+- HTML in a comment body is shown as text.
+- `"activity"` is in the page names.
+
+**Merge rule (P1 Decision 17): merge cb-34 only together with cb-31, cb-32 and cb-33.** The
+hidden tests are independent (cb-34's mock the API, so it can pass alone), but the product is
+not. Without cb-33, the page's `load` gets the stub's 501: a toast and an error card on every
+visit, worse than today's "Coming soon". Without cb-31 and cb-32, its Unlike and Delete buttons
+answer 404 on hidden posts. A test cannot see this, so the rule holds cb-34 back (7.2 step 4).
+
+**Run order:** cb-31 alone first (`-j 1`). In-place editing is new for this model, so read its
+diff, iterations and token counts (architect input < 5.5k). Then `cb-32 cb-33 cb-34` with
+`-j 1`. A failed in-place task goes through the reopen ladder (8.1 step 4). Never validate
+cb-31..cb-34 again after acceptance: their baseline then fails by design.
+
+**Known P1 behaviour (accepted for P1; P2 notes next to backlog items 8 and 12):**
+- A post page opened before an unfriend: Unlike, or Delete on my own comment, succeeds (200).
+  The refresh then gets 404, so one "post not found" toast shows and the stale page stays.
+- Delete on a comment that is already gone (a double click, or a comment the post's author
+  deleted while my page was open) toasts "post not found".
+- Between the frame commit and the merge, `main` showed an "Activity" nav entry with "Coming
+  soon" (`/api/activity/hidden` answered 501), and two CONTRACT blocks ahead of their code. The
+  product still worked. This ended with the merge (`b21aa4b`).
+
+---
+
 ## 7. Procedures
 
 ### 7.1 Phase A: frame, tasks, proof (staff, before any worker runs)
@@ -2740,17 +3161,36 @@ mocked id. `tick 15000` -> both GETs again. Both empty -> "Nobody is online", "N
    `swarm -t chatbook-oracle validate <wave ids>` (catches any drift since Phase A).
 2. **Run**: `swarm -t chatbook run <wave ids> -j 1` (engine default `local-14b-arch`; one GPU).
 3. **Triage** failures with the ladder in 8.1; rerun as needed.
-4. **Integrate explicitly**: list worker branches
-   (`git -C chatbook branch --list "agent/*--local-*"`), then
-   `swarm -t chatbook integrate <this wave's passing branches> <all earlier accepted branches>`.
+4. **Integrate explicitly** from the regression list `harness/accepted.txt` (since P1; it
+   came with the P1 harness commit `13c35a4`. Waves 1-5 listed `git -C chatbook branch --list
+   "agent/*--local-*"`, which would now also list retired branches):
+   ```
+   $keep = Get-Content E:/Playground_Projects/05_ChatBook/harness/accepted.txt |
+           Where-Object { $_ -and -not $_.StartsWith('#') }
+   swarm -t chatbook integrate $keep <this wave's passing branches>
+   ```
    Earlier branches merge as no-ops and their hidden tests run again (regression suite).
+   - A wave that reopens a feature leaves out of `$keep` only the old branches whose
+     replacement passed (the new task carries their suite, row 23), e.g. `$keep = $keep |
+     Where-Object { $_ -notlike 'agent/cb-24-likes--*' }` only if cb-31 passed. An old branch
+     whose replacement failed stays in, so its feature keeps a regression suite.
+   - Hold back what a merge rule holds back. P1: cb-34 merges only together with cb-31, cb-32
+     and cb-33 (6.5, Polish P1).
+   - `integrate` runs only the suites of the branches it merges and only logs a missing or
+     mistyped name as "ignored". So check the line `integration OK: N branch(es) merged`. For
+     P1, N = 30 + the P1 branches merged - the old branches left out (32 when all 4 pass).
+   - After the merge to `main` (step 6), add the merged new branches to `accepted.txt` and move
+     each replaced old branch to its `# retired:` block with the reason (e.g.
+     `superseded by cb-31-likes`), then commit the harness. Never list a retired branch: its old
+     suite contradicts the new rules, so integrate fails on its known cases.
 5. **Check provenance**: every merged commit body says `Automated change by swarm engine
    local-...`; none says `oracle`:
    `git -C chatbook log --format=%b main..integration/<stamp>`.
 6. **Advance main**: `git -C chatbook merge --ff-only integration/<stamp>` (on `main`;
    integrate never advances it). Keep the `agent/*` branches on the real target until the project
-   ends (they are the regression list); `swarm -t chatbook clean` without `--branches` removes
-   kept worktrees once inspected.
+   ends: the ones listed in `harness/accepted.txt` are the regression list, and retired ones stay
+   as records (they are ancestors of `main`). `swarm -t chatbook clean` without `--branches`
+   removes kept worktrees once inspected.
 7. **Smoke test** (7.3) for W2+ and **staff flow test** (3.19) committed to `main`.
 8. **Update PROGRESS.md** (owner's rule: before and after long runs).
 
@@ -2775,6 +3215,22 @@ and from a profile; send messages both ways and see them arrive within ~2 s; the
 `(n)` title rise and clear after opening the chat; "Seen" appears; create a group, rename it, add
 a friend, leave; "Show older" with 60+ messages (seed via repeated sends); edit own profile;
 log out. The chief may drive this with the Claude Browser tools. The smoke DB lives in `%TEMP%`.
+
+**P1 additions** (after the P1 integrate, on `integration/<stamp>`):
+- alice and bob are friends. alice likes bob's post and comments on it. Then bob unfriends alice.
+- As alice, the Feed no longer shows bob's post. Activity shows `Comments (1)` and `Likes (1)`,
+  with bob's name and alice's comment, and no post text.
+- Click bob's name: his profile opens.
+- Delete, then Unlike: each row disappears, and both empty texts show.
+- As bob, his post shows one like fewer and the comment is gone.
+- A feed tab alice opened before the unfriend: its Unlike now succeeds (no 404 toast).
+- Stale post page: alice and bob become friends again. alice likes and comments on a second bob
+  post and keeps its post page (`#/post/<id>`) open in a tab. bob unfriends alice. In that tab,
+  Unlike and Delete on her own comment each succeed. Then one "post not found" toast shows (the
+  refresh gets 404), and the stale page stays (old count, the comment still shown). A second
+  click toasts again. This is expected P1 behaviour, and Activity no longer lists what was
+  removed.
+- The top bar now has 7 entries: check it at 360 px width.
 
 ---
 
@@ -2805,6 +3261,24 @@ log out. The chief may drive this with the Claude Browser tools. The smoke DB li
    UI -> move a part into a later task that reopens the folder, whose `solution.patch` is written
    against the merged code at that time and whose acceptance folder also carries the original
    task's test file (so the original behaviour stays tested).
+
+   **Reopening a finished feature in place** (since P1, row 22). Staff change only its CONTRACT
+   block on `main` and regenerate `tools/contracts.json` (one "changed"). The task's prompt says
+   that the file always changes and quotes the current body as "wrong now" next to the new
+   body. Its acceptance folder carries the old suite (row 23). An iteration line `no changes`
+   means the architect thought the code already matched. Treat it as a prompt problem, not as
+   sampling noise. If such a task fails 4/4:
+   1. Rerun once unchanged, never more than once before step 2.
+   2. `-e local-14b`: its single pass sees the prompt, which quotes the current and the new body.
+   3. Re-spec (prompt and CONTRACT), re-validate on the oracle, and rerun.
+   4. A staff commit that resets that one file to its new CONTRACT stub (the carried suite still
+      fails on base, so the baseline holds), then rerun.
+   5. If that fails too, give the feature its old state back in one staff commit:
+      `git -C chatbook checkout <frame commit>^ -- src/chatbook/features/<name>/handler.py`, then
+      `py tools/check_extra.py --write-contracts` (1 changed). This restores the old CONTRACT and
+      the model's old code byte for byte, and undoes a stub reset too. Do not `git revert` the
+      frame commit: it holds other changes too. The old branch was never retired, so it stays on
+      `harness/accepted.txt`. Hold back whatever depends on the change (P1: cb-34).
 5. **Other engines**: `-e local-14b` (no architect: the single pass sees the prompt directly,
    useful when the plan loses details), then `-e local-7b-arch` (16k context, when the prompt
    overflows). `deepseek-coder-v2:16b` is not used (ignores instructions, measured).

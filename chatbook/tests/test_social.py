@@ -6,6 +6,7 @@ from chatbook.core.http import HTTPError
 from chatbook.core.social import (
     are_friends,
     befriend,
+    can_see_post,
     friend_ids,
     relationship,
     unfriend,
@@ -95,3 +96,23 @@ def test_visible_post() -> None:
         with pytest.raises(HTTPError) as info:
             visible_post(db, post_id, viewer)
         assert info.value.status == 404
+
+
+def test_can_see_post() -> None:
+    db, (a, b, c, d) = make_db()
+    befriend(db, a, b, NOW)
+    befriend(db, b, c, NOW)
+    befriend(db, a, d, NOW)
+    pid = db.run("INSERT INTO posts (author_id, body, created_at) VALUES (?, ?, ?)", a, "hi", NOW)
+    unfriend(db, a, d)
+    cases = [(pid, a, True), (pid, b, True), (pid, c, False), (pid, d, False), (999, a, False)]
+    for post_id, viewer, seen in cases:
+        assert can_see_post(db, post_id, viewer) is seen
+        if seen:
+            assert visible_post(db, post_id, viewer)["id"] == post_id
+        else:
+            with pytest.raises(HTTPError) as info:
+                visible_post(db, post_id, viewer)
+            assert (info.value.status, info.value.message) == (404, "post not found")
+    befriend(db, a, d, NOW)
+    assert can_see_post(db, pid, d) is True

@@ -1,0 +1,19 @@
+diff --git a/src/chatbook/features/comments/handler.py b/src/chatbook/features/comments/handler.py
+index 320287d..919e06b 100644
+--- a/src/chatbook/features/comments/handler.py
++++ b/src/chatbook/features/comments/handler.py
+@@ -87,9 +87,10 @@ def delete_comment(request: Request) -> Response:
+     cid = path_id(request)
+     row = request.db.one("SELECT * FROM comments WHERE id = ?", cid)
+     if row is None:
+-        raise HTTPError(404, "comment not found")
+-    post = visible_post(request.db, row["post_id"], request.me.id)
+-    if request.me.id != row["author_id"] and request.me.id != post["author_id"]:
+-        raise HTTPError(403, "forbidden")
++        raise HTTPError(404, "post not found")
++    if row["author_id"] != request.me.id:
++        post = visible_post(request.db, row["post_id"], request.me.id)
++        if post["author_id"] != request.me.id:
++            raise HTTPError(403, "forbidden")
+     request.db.run("DELETE FROM comments WHERE id = ?", cid)
+     return Response(200, {"deleted": cid})

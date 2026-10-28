@@ -8,6 +8,9 @@ everything passes. The task names the one feature folder you may change.
   stub. Keep its `@route(...)` lines and function names, or its `CB.page(...)` name, nav and
   order, exactly as they are.
 - The file must still begin with its CONTRACT block, unchanged; your code goes below it.
+- Some tasks change a feature that already works: the file then holds working code below a
+  changed CONTRACT block. Change only what the task names, so the code matches the CONTRACT
+  again; keep everything else exactly as it is.
 - Implement exactly what the CONTRACT and the task say: routes, JSON keys, status codes, the
   order of checks, list order, texts and labels.
 - Keep the file under 120 lines. Add no files unless the task asks.

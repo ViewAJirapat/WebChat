@@ -46,6 +46,7 @@ ALL = [
     "relationship",
     "friend_ids",
     "visible_post",
+    "can_see_post",
     "create_conversation",
     "find_direct",
     "require_member",
