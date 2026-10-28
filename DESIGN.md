@@ -2938,7 +2938,10 @@ Hidden tests (`test_cb32_comments.py`):
 - An ex-friend deleting someone else's comment on the hidden post: 404 (not 403). Nothing
   changes.
 - Item 11: for a stranger, a friend of a friend and an ex-friend, the hidden comment id, `999`
-  and an already-deleted id all give 404 with equal bodies.
+  and an already-deleted id all give 404 with equal bodies. They are also compared with the
+  body of `GET /api/posts/<hidden>/comments` by the same actor, which `visible_post` itself
+  produces; DELETE bodies compared only with each other would let a wrong text such as
+  "comment not found" pass (cb-32 review).
 - My own hidden comment deleted twice: the second body equals the missing-id body.
 - Friends again: someone else's comment on that post gives 403 again.
 - The post's author still deletes an ex-friend's comment on their own post: 200.

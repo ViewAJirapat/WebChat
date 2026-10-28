@@ -608,7 +608,9 @@ last.
 3. A never-friend's seeded own comment on a stranger's post: 200.
 4. An ex-friend deleting someone else's comment on the hidden post: 404 (not 403), nothing changes.
 5. **Item 11:** for the actors stranger, friend of a friend and ex-friend: the hidden comment id,
-   `999` and an already-deleted id all give 404 with **equal** `json` bodies.
+   `999` and an already-deleted id all give 404 with **equal** `json` bodies, and they equal the
+   body of `GET /api/posts/<hidden>/comments` by the same actor (made by `visible_post`). Without
+   that comparison a wrong text such as "comment not found" passes (found by the cb-32 review).
 6. My own hidden comment deleted twice: the second body equals the missing-id body.
 7. Friends again: someone else's comment on that post gives 403 again.
 8. The post's author still deletes an ex-friend's comment on their own post: 200.
@@ -821,7 +823,7 @@ this one: the 404 answers above must be exactly HTTPError(404, "post not found")
      30 old suites. Expected: exactly the 2 cases of F.1 fail, everything else passes;
    - adversarial mutant review (each mutant in a scratch copy, never in a repo): old code; a
      leaked count; 200 when `gone == 0`; another 404 text (killed by cb-31 tests 4-5 and cb-32
-     test 5); `visible_post` still first in cb-32; "comment not found" left in place; anyone
+     test 5, both through a comparison with a body made by `visible_post`); `visible_post` still first in cb-32; "comment not found" left in place; anyone
      deleting comments on hidden posts; activity listing visible or own posts or other users'
      rows; wrong order; no LIMIT; a post-body leak; a page using `CB.go` instead of refresh, a
      toast, a poll, or `l.id`;
