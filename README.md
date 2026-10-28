@@ -22,6 +22,7 @@ What the app does:
 | [`chatbook/`](https://github.com/ViewAJirapat/WebChat/tree/main/chatbook) | **The web app**: the stdlib Python JSON API, sqlite and the plain-JS UI. The features the local LLM wrote are in [`chatbook/src/chatbook/features/`](https://github.com/ViewAJirapat/WebChat/tree/main/chatbook/src/chatbook/features) |
 | [`harness/`](https://github.com/ViewAJirapat/WebChat/tree/main/harness) | `swarm.toml` and `tasks/cb-01..cb-30`: each task's spec, hidden tests and reference patch |
 | [HANDOFF.md](HANDOFF.md) | Start here to continue the work |
+| [LOCAL-MODEL-REPORT.md](LOCAL-MODEL-REPORT.md) | How Claude drove the local model: the prompts, the retry loop and real examples of errors and their fixes |
 | [PROGRESS.md](PROGRESS.md), [DESIGN.md](DESIGN.md), `notes/` | The step log, the blueprint, the review backlog |
 | `tools/publish-main.sh` | Updates `main` from the working branches |
 
