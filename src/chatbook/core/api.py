@@ -18,6 +18,7 @@ from chatbook.core.registry import route
 from chatbook.core.social import (
     are_friends,
     befriend,
+    can_see_post,
     friend_ids,
     relationship,
     unfriend,
@@ -69,6 +70,7 @@ __all__ = [
     "relationship",
     "friend_ids",
     "visible_post",
+    "can_see_post",
     "create_conversation",
     "find_direct",
     "require_member",

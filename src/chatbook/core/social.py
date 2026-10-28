@@ -66,3 +66,12 @@ def visible_post(db: Db, post_id: int, viewer_id: int) -> Row:
     if author != viewer_id and not are_friends(db, viewer_id, author):
         raise HTTPError(404, "post not found")
     return row
+
+
+def can_see_post(db: Db, post_id: int, viewer_id: int) -> bool:
+    """True if the post exists and its author is the viewer or a friend of the viewer."""
+    row = db.one("SELECT author_id FROM posts WHERE id = ?", post_id)
+    if row is None:
+        return False
+    author = int(row["author_id"])
+    return author == viewer_id or are_friends(db, viewer_id, author)

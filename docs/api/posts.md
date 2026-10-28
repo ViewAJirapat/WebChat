@@ -3,6 +3,9 @@
 ## Helper (db: the request's database)
 visible_post(db, post_id, viewer_id) -> dict
     the posts row; 404 unless its author is the viewer or a friend of the viewer
+can_see_post(db, post_id, viewer_id) -> bool
+    True if the post exists and its author is the viewer or a friend of the viewer;
+    never raises. A post is hidden from me when this is False (e.g. after an unfriend)
 
 ## Tables
 posts(id, author_id, body, created_at)

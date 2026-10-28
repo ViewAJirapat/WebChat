@@ -1,7 +1,7 @@
 """comments: list, add and delete comments.
 
 CONTRACT (keep this docstring; implement exactly this):
-Notation: db = request.db, me = request.me.id.
+Notation: db = request.db, me = request.me.id (the code below writes request.db and request.me.id).
 K(row) = {"id": row["id"], "post_id": row["post_id"],
           "author": user_json(require_user(db, row["author_id"])), "body": row["body"],
           "created_at": row["created_at"]}
@@ -15,11 +15,12 @@ POST /api/posts/{id}/comments  body {"body"}
                " VALUES (?, ?, ?, ?)", pid, me, text, request.now)
   -> 201 {"comment": K({"id": cid, "post_id": pid, "author_id": me, "body": text,
                         "created_at": request.now})}
-DELETE /api/comments/{id}
+DELETE /api/comments/{id}   (me may delete its own comment even on a post me can't see)
   cid = path_id(request); row = db.one("SELECT * FROM comments WHERE id = ?", cid)
-  row is None -> 404
-  post = visible_post(db, row["post_id"], me)                        (404)
-  me is neither row["author_id"] nor post["author_id"] -> 403
+  row is None -> raise HTTPError(404, "post not found")    (exactly the 404 of visible_post)
+  if row["author_id"] != me:
+    post = visible_post(db, row["post_id"], me)                      (404)
+    post["author_id"] != me -> 403
   DELETE FROM comments WHERE id = ?  -> 200 {"deleted": cid}
 Tables you may write: comments.
 """
