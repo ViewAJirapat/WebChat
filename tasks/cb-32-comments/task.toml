@@ -1,0 +1,71 @@
+title = "Comments: delete your own comment on a hidden post; one 404 for hidden and missing"
+type = "fix"
+files = [
+  "src/chatbook/features/comments/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/comments/**"]
+prompt = """
+The feature `comments` in `src/chatbook/features/comments/handler.py` already works. Its
+CONTRACT docstring was changed for one route only: DELETE /api/comments/{id} (function
+`delete_comment`). The code of `delete_comment` does not match the new CONTRACT yet, so this
+task always changes the file. Change only the function `delete_comment`. Keep the CONTRACT
+docstring, the imports, the three @route lines, the function names and the functions
+`comment_json`, `list_comments` and `add_comment` exactly as they are.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Notation: db = request.db, me = request.me.id. In code write request.db and request.me.id,
+as the rest of the file does.
+
+Why: (1) after an unfriend, a user must still be able to delete their own comment on the
+former friend's post; (2) a missing comment and a comment on a post me cannot see must give
+the same 404, so nobody can find out which hidden comment ids exist.
+
+Current body of delete_comment (wrong now: it says "comment not found", and it calls
+visible_post for every comment, so me's own comment on a post me cannot see gives 404):
+    cid = path_id(request)
+    row = request.db.one("SELECT * FROM comments WHERE id = ?", cid)
+    if row is None:
+        raise HTTPError(404, "comment not found")
+    post = visible_post(request.db, row["post_id"], request.me.id)
+    if request.me.id != row["author_id"] and request.me.id != post["author_id"]:
+        raise HTTPError(403, "forbidden")
+    request.db.run("DELETE FROM comments WHERE id = ?", cid)
+    return Response(200, {"deleted": cid})
+
+New body of delete_comment (replace the whole body with these lines, in this order):
+    cid = path_id(request)
+    row = request.db.one("SELECT * FROM comments WHERE id = ?", cid)
+    if row is None:
+        raise HTTPError(404, "post not found")
+    if row["author_id"] != request.me.id:
+        post = visible_post(request.db, row["post_id"], request.me.id)
+        if post["author_id"] != request.me.id:
+            raise HTTPError(403, "forbidden")
+    request.db.run("DELETE FROM comments WHERE id = ?", cid)
+    return Response(200, {"deleted": cid})
+A bad id makes path_id raise 404 itself. No new imports are needed.
+
+Details:
+- me's own comment (row["author_id"] == me) is always deleted, even when me can no longer see
+  the post (its author is no longer a friend of me). visible_post is not called for it.
+- For someone else's comment the old rules stay: 404 (raised by visible_post) when me cannot
+  see the post; 403 when me wrote neither the comment nor the post. The post's author may
+  delete any comment on their post, also one by a former friend.
+- A comment id that does not exist (never created, or already deleted) must give exactly the
+  404 that visible_post gives: HTTPError(404, "post not found"). Hidden tests compare it with
+  the 404 that visible_post gives for a post me cannot see.
+- Only the row with this id is deleted. A failed check (404 or 403) changes nothing.
+- GET and POST /api/posts/{id}/comments do not change.
+
+Example: cy (id 2) and dee (id 5) were friends; dee wrote post 8; cy commented on it
+(comment 14), and so did eli (comment 15); then dee unfriended cy. As cy:
+  DELETE /api/comments/14 -> 200 {"deleted": 14}, and comment 15 stays;
+  the same request again -> 404 {"error": "post not found"};
+  DELETE /api/comments/15 -> 404 {"error": "post not found"} (not 403), the same answer as
+  DELETE /api/comments/777 when comment 777 does not exist.
+
+Tables you may write: comments.
+JSON keys, status codes and list order must match exactly. Error texts are not tested, except
+this one: the 404 answers above must be exactly HTTPError(404, "post not found").
+"""

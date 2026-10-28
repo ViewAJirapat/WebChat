@@ -1,0 +1,64 @@
+title = "Likes: remove your own like from a post you can no longer see"
+type = "fix"
+files = [
+  "src/chatbook/features/likes/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/likes/**"]
+prompt = """
+The feature `likes` in `src/chatbook/features/likes/handler.py` already works. Its CONTRACT
+docstring was changed for one route only: DELETE /api/posts/{id}/like (function
+`unlike_post`). The code of `unlike_post` does not match the new CONTRACT yet, so this task
+always changes the file. Change only the function `unlike_post` and the import line. Keep the
+CONTRACT docstring, the three @route lines, the function names and the functions `like_post`
+and `list_likes` exactly as they are.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Notation: db = request.db, me = request.me.id. In code write request.db and request.me.id,
+as the rest of the file does.
+
+Why: after an unfriend, a user must still be able to remove their own like from the former
+friend's post, but must learn nothing else about that post.
+
+Current body of unlike_post (wrong now: it calls visible_post first, so a post me cannot see
+always gives 404, even when me has a like on it):
+    pid = path_id(request)
+    visible_post(request.db, pid, request.me.id)
+    request.db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, request.me.id)
+    n = int(request.db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid))
+    return Response(200, {"post_id": pid, "like_count": n, "liked": False})
+
+New body of unlike_post (replace the whole body with these lines, in this order):
+    pid = path_id(request)
+    gone = request.db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, request.me.id)
+    if not can_see_post(request.db, pid, request.me.id):
+        if gone == 0:
+            raise HTTPError(404, "post not found")
+        return Response(200, {"post_id": pid, "liked": False})
+    n = int(request.db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid))
+    return Response(200, {"post_id": pid, "like_count": n, "liked": False})
+db.run returns the number of rows deleted (0 or 1). A bad id makes path_id raise 404 itself.
+
+Imports: add HTTPError and can_see_post to the existing import from chatbook.core.api. Keep
+visible_post: like_post and list_likes still use it.
+
+Details:
+- can_see_post(db, post_id, viewer_id) -> bool is a frame helper (docs/api/posts.md). It is
+  False when the post does not exist or its author is neither me nor a friend of me. It never
+  raises.
+- When me cannot see the post, the 200 answer has exactly the keys "post_id" and "liked". No
+  "like_count": me may not learn how many likes the post has.
+- When me cannot see the post and had no like on it, the answer must be exactly the 404 that
+  visible_post gives: HTTPError(404, "post not found"). Hidden tests compare it with the 404
+  that POST and GET give for a post that does not exist or that me cannot see.
+- When me can see the post, nothing changes: 200 with like_count, also when me had no like.
+- POST and GET do not change: they still answer 404 for a post me cannot see.
+
+Example: ann (id 3) and bo (id 4) were friends; bo wrote post 11; ann liked it; then they
+unfriended. As ann, DELETE /api/posts/11/like -> 200 {"post_id": 11, "liked": false}, and
+ann's like is gone. The same request again -> 404 {"error": "post not found"}, the same answer
+as DELETE or POST /api/posts/888/like when post 888 does not exist.
+
+JSON keys, status codes and list order must match exactly. Error texts are not tested, except
+this one: the 404 answers above must be exactly HTTPError(404, "post not found").
+"""

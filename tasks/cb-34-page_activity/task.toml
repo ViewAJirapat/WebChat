@@ -1,0 +1,78 @@
+title = "My activity page"
+type = "feat"
+files = ["src/chatbook/features/page_activity/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_activity/**"]
+prompt = """
+Implement the page `activity` in `src/chatbook/features/page_activity/ui.js`. The file is a
+stub: keep its CONTRACT comment block unchanged at the top of the file and its
+`CB.page('activity', ...)` call with `title: 'My activity'`, `nav: 'Activity'` and
+`order: 45`, and replace the stub's `render` with `load` and `render` below (no `poll`). Leave
+one blank line after the CONTRACT block and put all your code below it.
+Reference: docs/ui.md (read-only).
+
+Why: after an unfriend, a user can no longer see the former friend's posts, but their own
+comments and likes on those posts are still there. This page lists them so the user can
+remove them.
+
+CB.page('activity', {title: 'My activity', nav: 'Activity', order: 45, load, render})  no poll
+load(): return await CB.api('GET', '/api/activity/hidden')
+render(d) -> CB.el('div', {class: 'stack'}, in this order:
+  CB.el('p', {class: 'muted'}, 'Your comments and likes on posts you can no longer see'),
+  CB.el('h2', {}, 'Comments (' + d.comments.length + ')'),
+  d.comments.length ? d.comments.map((k) => CB.el('div', {class: 'item'},
+      CB.el('span', {}, 'You commented on a post by'), CB.userLink(k.post_author),
+      CB.el('span', {}, k.body), CB.el('small', {class: 'muted'}, CB.time(k.created_at)),
+      CB.el('button', {testid: 'delete-' + k.id, onclick: async () => {
+          await CB.api('DELETE', '/api/comments/' + k.id); CB.refresh(); }}, 'Delete')))
+    : CB.el('p', {class: 'muted'}, 'No comments to remove'),
+  CB.el('h2', {}, 'Likes (' + d.likes.length + ')'),
+  d.likes.length ? d.likes.map((l) => CB.el('div', {class: 'item'},
+      CB.el('span', {}, 'You liked a post by'), CB.userLink(l.post_author),
+      CB.el('small', {class: 'muted'}, CB.time(l.created_at)),
+      CB.el('button', {testid: 'unlike-' + l.post_id, onclick: async () => {
+          await CB.api('DELETE', '/api/posts/' + l.post_id + '/like'); CB.refresh(); }},
+        'Unlike')))
+    : CB.el('p', {class: 'muted'}, 'No likes to remove'))
+Server answer: {comments: [{id, post_id, post_author: U, body, created_at}],
+  likes: [{post_id, post_author: U, created_at}]}   (a like has no id: use l.post_id)
+No link to the post (its page answers 404 now). No toast, no try/catch.
+(U = {id, username, display_name}.)
+
+Details:
+- The page has `title: 'My activity'`, `nav: 'Activity'` and `order: 45`. It is not public and
+  has no `poll`: only the `CB.refresh()` after a click reloads it.
+- `load()` makes exactly one request, `GET /api/activity/hidden` (no query, no body), and
+  returns the answer unchanged.
+- `render(d)` returns one `<div class="stack">` whose children are, in this order: the
+  `<p class="muted">` intro text; the `<h2>` `Comments (<n>)`; the comment rows, or
+  `<p class="muted">No comments to remove</p>` when `d.comments` is empty; the `<h2>`
+  `Likes (<n>)`; the like rows, or `<p class="muted">No likes to remove</p>` when `d.likes` is
+  empty. n is the length of that list (also `(0)` and `(1)`); do not use `CB.plural`.
+- Comment row, one per comment k, in the order of `d.comments`: one `<div class="item">`
+  holding, in this order, `<span>You commented on a post by</span>`,
+  `CB.userLink(k.post_author)` (the post's author, not me), a `<span>` with `k.body` (my
+  comment's full text, shown as text), a `<small class="muted">` with
+  `CB.time(k.created_at)`, and the button 'Delete' with testid `'delete-' + k.id`. Its click sends
+  `DELETE /api/comments/<k.id>` with no body, then calls `CB.refresh()`.
+- Like row, one per like l, in the order of `d.likes`: one `<div class="item">` holding, in
+  this order, `<span>You liked a post by</span>`, `CB.userLink(l.post_author)`, a
+  `<small class="muted">` with `CB.time(l.created_at)`, and the button 'Unlike' with testid
+  `'unlike-' + l.post_id`. Its click sends `DELETE /api/posts/<l.post_id>/like` with no body,
+  then calls `CB.refresh()`.
+- No `poll`, no `CB.avatar`, no `try`/`catch`, no toast, no request other than the 3 listed,
+  no link to the post; a like has no id, use `l.post_id`. A click never calls `CB.go`. On an
+  error answer `CB.api` shows the error itself and stops the click handler, so no refresh
+  follows.
+
+Example: comments `[{id: 52, post_id: 40, post_author: {id: 7, username: 'ivy',
+display_name: 'Ivy Ito'}, body: 'see you there', created_at: ...}]` and likes
+`[{post_id: 44, post_author: {id: 12, username: 'jon', display_name: 'Jon Jones'},
+created_at: ...}]`: the page reads "Your comments and likes on posts you can no longer see
+Comments (1) You commented on a post by Ivy Ito see you there <time> Delete Likes (1) You liked
+a post by Jon Jones <time> Unlike". Clicking `delete-52` sends DELETE /api/comments/52 and
+clicking `unlike-44` sends DELETE /api/posts/44/like; each then reloads the page. Clicking
+'Ivy Ito' opens her profile.
+
+Texts, headings, classes, testids, button labels, request paths/bodies and element order must
+match exactly; error message texts are not tested.
+"""

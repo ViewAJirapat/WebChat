@@ -1,0 +1,39 @@
+# ChatBook regression list: accepted worker branches, one per line (# = comment).
+# Integrate every wave with all of these plus the wave's new branches (PowerShell):
+#   $keep = Get-Content E:/Playground_Projects/05_ChatBook/harness/accepted.txt |
+#           Where-Object { $_ -and -not $_.StartsWith('#') }
+#   <swarm> -t chatbook integrate $keep <new branches>
+# A wave that reopens a feature leaves out only the old branches whose replacement passed.
+# Once the replacement is accepted, the old branch moves to the retired block below; the new
+# task carries its suite. Never list a retired branch: its old suite contradicts the new rules.
+agent/cb-01-accounts--local-14b-arch--20261027-173512-a3bd
+agent/cb-02-people--local-14b-arch--20261027-173853-c4d0
+agent/cb-03-friend_requests--local-14b-arch--20261027-174201-06fa
+agent/cb-04-friend_answers--local-14b-arch--20261027-174643-e1e5
+agent/cb-05-friends--local-14b-arch--20261027-184618-e210
+agent/cb-06-page_login--local-14b-arch--20261027-175413-9596
+agent/cb-07-dm--local-14b-arch--20261027-192455-49fa
+agent/cb-08-groups--local-14b-arch--20261027-192931-35be
+agent/cb-09-group_members--local-14b-arch--20261027-193434-e448
+agent/cb-10-conversations--local-14b-arch--20261027-195013-b76c
+agent/cb-11-chat_send--local-14b-arch--20261027-195343-49ee
+agent/cb-12-chat_history--local-14b-arch--20261027-195902-7e2a
+agent/cb-13-updates--local-14b-arch--20261027-200248-135d
+agent/cb-14-profiles--local-14b-arch--20261027-200510-0e6d
+agent/cb-15-page_people--local-14b-arch--20261027-201031-086e
+agent/cb-16-page_friends--local-14b-arch--20261027-202521-d29b
+agent/cb-17-page_inbox--local-14b-arch--20261027-204504-876b
+agent/cb-18-page_chat--local-14b-arch--20261027-205615-565b
+agent/cb-19-page_group_new--local-14b-arch--20261027-210518-b518
+agent/cb-20-page_group--local-14b-arch--20261027-210816-a745
+agent/cb-21-page_profile--local-14b-arch--20261027-211301-3fd4
+agent/cb-22-badges--local-14b-arch--20261027-211746-5878
+agent/cb-23-posts--local-14b-arch--20261028-012459-5205
+agent/cb-24-likes--local-14b-arch--20261028-014937-36e3
+agent/cb-25-comments--local-14b-arch--20261028-015647-cfda
+agent/cb-26-presence--local-14b-arch--20261028-020117-c2b5
+agent/cb-27-suggestions--local-14b-arch--20261028-020402-59e4
+agent/cb-28-page_feed--local-14b-arch--20261028-020737-5136
+agent/cb-29-page_post--local-14b-arch--20261028-022141-0d74
+agent/cb-30-page_discover--local-14b-arch--20261028-022831-703c
+# retired:
