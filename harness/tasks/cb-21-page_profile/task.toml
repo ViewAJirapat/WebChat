@@ -1,0 +1,69 @@
+title = "Profile page: view user profiles, friend actions, and edit own profile"
+type = "feat"
+files = ["src/chatbook/features/page_profile/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_profile/**"]
+prompt = """
+Implement the page `profile` in `src/chatbook/features/page_profile/ui.js`. The file is a stub:
+keep its CONTRACT comment and its `CB.page('profile', ...)` call with `title: 'Profile'`,
+`nav: 'Profile'` and `order: 50` (not public, no poll), and replace the stub with `load` and
+`render` below.
+Reference: docs/ui.md (read-only).
+
+CB.page('profile', {title: 'Profile', nav: 'Profile', order: 50, load, render})
+load(params): return (await CB.api('GET', '/api/users/' + (params.id || CB.me.id))).user
+render(u) -> CB.el('div', {class: 'stack'},
+  CB.el('div', {class: 'row'}, CB.avatar(u), CB.el('h2', {}, u.display_name)),
+  CB.el('div', {class: 'muted'}, '@' + u.username),
+  CB.el('p', {}, u.bio || 'No bio yet'),
+  CB.el('div', {class: 'muted'}, CB.plural(u.friend_count, 'friend')),
+  actions(u))
+actions(u) by u.relationship:
+  'self'             -> CB.form({fields: [
+                          {name: 'display_name', label: 'Display name', value: u.display_name},
+                          {name: 'bio', label: 'Bio', type: 'textarea', value: u.bio}],
+                        submit: 'Save profile',
+                        onsubmit: async (v) => {
+                          await CB.api('PUT', '/api/profile', {display_name: v.display_name, bio: v.bio});
+                          CB.toast('Profile saved'); await CB.reloadMe(); CB.refresh(); }})
+  'none'             -> button 'Add friend': await CB.api('POST', '/api/friends/requests',
+                        {user_id: u.id}); CB.refresh()
+  'request_sent'     -> button 'Cancel request': await CB.api('DELETE',
+                        '/api/friends/requests/' + u.request_id); CB.refresh()
+  'request_received' -> button 'Accept': await CB.api('POST', '/api/friends/requests/' +
+                        u.request_id + '/accept'); CB.refresh()
+  'friends'          -> CB.el('div', {class: 'row'},
+                          button 'Message': const r = await CB.api('POST', '/api/dm', {user_id: u.id});
+                                            CB.go('chat', {id: r.conversation.id})
+                          button 'Unfriend': await CB.api('DELETE', '/api/friends/' + u.id); CB.refresh())
+Server answer: {user: {id, username, display_name, bio, joined_at, relationship, friend_count,
+request_id}}.
+
+Details:
+- `load(params)` requests `GET /api/users/` + `(params.id || CB.me.id)` and returns `.user` from
+  the response object `{user: ...}`.
+- `render(u)` returns a `<div class="stack">` with five children in exact order:
+  1. `CB.el('div', {class: 'row'}, CB.avatar(u), CB.el('h2', {}, u.display_name))`
+  2. `CB.el('div', {class: 'muted'}, '@' + u.username)`
+  3. `CB.el('p', {}, u.bio || 'No bio yet')`
+  4. `CB.el('div', {class: 'muted'}, CB.plural(u.friend_count, 'friend'))`
+  5. `actions(u)` chosen by `u.relationship`:
+     - `'self'`: `CB.form` with `display_name` (text, label `'Display name'`, `value: u.display_name`)
+       and `bio` (`type: 'textarea'`, label `'Bio'`, `value: u.bio`), `submit: 'Save profile'`.
+       Its `onsubmit` sends `PUT /api/profile` with `{display_name: v.display_name, bio: v.bio}`
+       as typed (no trimming or client checks), then calls `CB.toast('Profile saved')`,
+       `await CB.reloadMe()`, and `CB.refresh()`.
+     - `'none'`: a `<button>` `'Add friend'` that posts `{user_id: u.id}` to `/api/friends/requests`
+       and calls `CB.refresh()`.
+     - `'request_sent'`: a `<button>` `'Cancel request'` that sends `DELETE /api/friends/requests/`
+       + `u.request_id` and calls `CB.refresh()`.
+     - `'request_received'`: a `<button>` `'Accept'` that posts to `/api/friends/requests/` +
+       `u.request_id` + `'/accept'` (no body) and calls `CB.refresh()`.
+     - `'friends'`: `CB.el('div', {class: 'row'}, ...)` containing two buttons in order:
+       `'Message'` (posts `{user_id: u.id}` to `/api/dm` and calls `CB.go('chat', {id: r.conversation.id})`
+       without refreshing) and `'Unfriend'` (sends `DELETE /api/friends/` + `u.id` and calls
+       `CB.refresh()`).
+- Never write `try/catch`; `CB.api` shows server error messages and stops the callback.
+
+Texts, labels, field names and their order, button labels, CSS classes, request bodies and
+element order must match; error message texts are not tested.
+"""

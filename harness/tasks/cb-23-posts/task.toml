@@ -1,0 +1,83 @@
+title = "Posts: create a post, the news feed, read and delete a post"
+type = "feat"
+files = [
+  "src/chatbook/features/posts/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/posts/**"]
+prompt = """
+Implement the feature `posts` in `src/chatbook/features/posts/handler.py`. The file is a stub:
+keep its CONTRACT docstring unchanged at the top of the file (your code goes below it), keep
+its four @route lines and the function names `create_post`, `get_feed`, `get_post` and
+`delete_post`, and replace each `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Imports: `from typing import Any`, and from chatbook.core.api: Db, HTTPError, Request,
+Response, body_str, path_id, query_int, query_opt_int, require_user, route, user_json,
+visible_post.
+
+Post shape: write this helper in the file, above the routes:
+post_json(db: Db, row: dict[str, Any], me: int) -> dict[str, Any] =
+  {"id": row["id"], "author": user_json(require_user(db, row["author_id"])),
+  "body": row["body"], "created_at": row["created_at"],
+  "like_count": int(db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", row["id"])),
+  "comment_count": int(db.value("SELECT COUNT(*) FROM comments WHERE post_id = ?", row["id"])),
+  "liked": db.one("SELECT 1 FROM likes WHERE post_id = ? AND user_id = ?", row["id"], me)
+           is not None}
+"like_count" and "comment_count" count the rows of every user; "liked" is the bool True when
+me has liked the post, else False.
+
+POST /api/posts  body {"body"}                                  function create_post
+  1. text = body_str(request, "body", max_len=2000)
+     (raises 400 itself unless the request body is a JSON object whose "body" is a string of
+     1-2000 characters after strip(); the stripped text is stored)
+  2. pid = db.run("INSERT INTO posts (author_id, body, created_at) VALUES (?, ?, ?)",
+                  me, text, request.now)
+  -> 201 {"post": post_json(db, visible_post(db, pid, me), me)}
+
+GET /api/feed?limit=&before=                                    function get_feed
+  1. limit = query_int(request, "limit", default=20, lo=1, hi=100)
+     (raises 400 itself when "limit" is present and not an integer in 1..100; missing or
+     empty -> 20)
+  2. before = query_opt_int(request, "before")
+     (raises 400 itself when "before" is present and not a non-negative integer; missing or
+     empty -> None); cursor = before if before is not None else 2**62
+  3. rows, more = db.page("SELECT * FROM posts WHERE id < ? AND (author_id = ? OR author_id IN"
+         " (SELECT friend_id FROM friendships WHERE user_id = ?)) ORDER BY id DESC",
+         cursor, me, me, limit=limit)
+     (adjacent string literals, never + or f-strings; db.page adds LIMIT itself)
+  -> 200 {"posts": [post_json(db, r, me) for r in rows], "has_more": more}
+  The feed holds me's own posts and the posts of me's friends with id < cursor, newest first
+  (id descending). Posts of anyone else (a friend of a friend, a user with a pending friend
+  request) never appear. "has_more" is True iff more such posts exist beyond this page.
+
+GET /api/posts/{id}                                             function get_post
+  1. pid = path_id(request)          (a bad or missing id raises 404 itself)
+     row = visible_post(db, pid, me) (raises 404 itself unless the post exists and its author
+                                      is me or a friend of me)
+  -> 200 {"post": post_json(db, row, me)}
+
+DELETE /api/posts/{id}                                          function delete_post
+Checks in this order (the first failing check decides the status):
+  1. pid = path_id(request); row = visible_post(db, pid, me)    (404, as above)
+  2. row["author_id"] != me -> 403   (a friend can see the post but cannot delete it)
+  3. db.run("DELETE FROM likes WHERE post_id = ?", pid)
+     db.run("DELETE FROM comments WHERE post_id = ?", pid)
+     db.run("DELETE FROM posts WHERE id = ?", pid)
+  -> 200 {"deleted": pid}            (pid is an int)
+  Only this post and its own likes and comments are deleted; a 403 or 404 changes nothing.
+
+Example: rosa (id 1, "Rosa Ruiz") and sam (id 2, "Sam Stone") are friends; tom (id 3) is a
+friend of sam only. Posts: 4 by rosa, 6 by sam, 9 by tom; nobody liked or commented.
+As rosa: GET /api/feed -> posts [6, 4] (ids), "has_more" False; ?limit=1 -> [6], True;
+?before=6 -> [4], False; ?limit=0 -> 400. GET /api/posts/9 -> 404.
+As rosa at now 1700000005000, POST /api/posts {"body": "  bread is ready "} -> 201
+{"post": {"id": 10, "author": {"id": 1, "username": "rosa", "display_name": "Rosa Ruiz"},
+"body": "bread is ready", "created_at": 1700000005000, "like_count": 0, "comment_count": 0,
+"liked": false}}. DELETE /api/posts/6 as rosa -> 403; as sam -> 200 {"deleted": 6}.
+
+Tables you may write: posts; likes and comments (delete only, when deleting a post).
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""

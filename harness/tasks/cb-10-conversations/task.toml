@@ -1,0 +1,56 @@
+title = "Conversations: inbox list and conversation detail"
+type = "feat"
+files = [
+  "src/chatbook/features/conversations/handler.py",
+  "docs/api/base.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/conversations/**"]
+prompt = """
+Implement the feature `conversations` in `src/chatbook/features/conversations/handler.py`. The
+file is a stub: keep its CONTRACT docstring, its two @route lines and the function names
+`list_conversations` and `get_conversation`, and replace each `raise HTTPError(501, ...)` with
+the implementation below.
+Reference: docs/api/base.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Imports, all from chatbook.core.api: Request, Response, conversation_json, path_id,
+require_member, route. HTTPError is then unused: remove it from the import line (ruff fails
+on an unused import).
+
+GET /api/conversations                           function list_conversations
+  rows = db.all("SELECT conversation_id FROM members WHERE user_id = ?", me)
+  items = [conversation_json(db, r["conversation_id"], me) for r in rows]
+  items.sort(key=lambda c: (c["updated_at"], c["id"]), reverse=True)
+  -> 200 {"conversations": items}
+
+  The list holds every conversation me is a member of, direct and group, and no other; a
+  group me has left is not in it. Each item is exactly conversation_json(db, cid, me): the C
+  shape as me sees it (the title of a direct conversation is the other member's name, and
+  unread counts me's unread messages). Never build C by hand.
+  Order: newest activity first. updated_at is the created_at of the conversation's last
+  message, or the conversation's own created_at when it has no message yet. Larger updated_at
+  first; equal updated_at: larger conversation id first. The sort line above does exactly
+  this. Example: conversation 1 created at time 100 with a message at time 300,
+  conversation 2 created at 200 with no message, conversation 3 created at 300 with no
+  message -> ids [3, 1, 2] (1 and 3 tie at 300, so id 3 comes first).
+  No conversations -> 200 {"conversations": []}.
+
+GET /api/conversations/{id}                      function get_conversation
+  1. cid = path_id(request)                      (a bad id raises 404 itself)
+  2. require_member(db, cid, me)                 (raises 404 itself if the conversation does
+                                                  not exist or me is not a member)
+  3. rows = db.all("SELECT user_id, last_read_id FROM members WHERE conversation_id = ?"
+                   " ORDER BY user_id", cid)      (adjacent string literals, not +)
+     reads = [{"user_id": r["user_id"], "last_read_id": r["last_read_id"]} for r in rows]
+  -> 200 {"conversation": conversation_json(db, cid, me), "reads": reads}
+
+  reads has one entry per current member (a member who left is gone), ascending by user_id,
+  each with exactly the keys "user_id" and "last_read_id" (both integers; last_read_id is 0
+  until that member reads the conversation or sends a message in it). The chat page uses it
+  to show "Seen". The 404 is the same for a missing conversation and for one me is not in.
+
+Read-only: neither route writes to any table (no INSERT, UPDATE or DELETE; do not mark
+anything read).
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""

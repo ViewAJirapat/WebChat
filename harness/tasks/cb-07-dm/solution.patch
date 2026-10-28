@@ -1,0 +1,40 @@
+diff --git a/src/chatbook/features/dm/handler.py b/src/chatbook/features/dm/handler.py
+index c2c74f8..e7e0151 100644
+--- a/src/chatbook/features/dm/handler.py
++++ b/src/chatbook/features/dm/handler.py
+@@ -14,9 +14,33 @@ POST /api/dm  body {"user_id"}  checks in this order:
+ Tables you may write: conversations and members only through create_conversation.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    are_friends,
++    body_id,
++    conversation_json,
++    create_conversation,
++    find_direct,
++    require_user,
++    route,
++)
+ 
+ 
+ @route("POST", "/api/dm")
+ def open_dm(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    other = body_id(request, "user_id")
++    if other == me:
++        raise HTTPError(400, "you cannot message yourself")
++    require_user(db, other)
++    if not are_friends(db, me, other):
++        raise HTTPError(403, "you can only message friends")
++    cid = find_direct(db, me, other)
++    status = 200
++    if cid is None:
++        cid = create_conversation(db, "direct", "", me, [other], request.now)
++        status = 201
++    return Response(status, {"conversation": conversation_json(db, cid, me)})

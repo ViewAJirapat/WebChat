@@ -1,0 +1,68 @@
+title = "Likes: like, unlike and list who liked a post"
+type = "feat"
+files = [
+  "src/chatbook/features/likes/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/likes/**"]
+prompt = """
+Implement the feature `likes` in `src/chatbook/features/likes/handler.py`. The file is a stub:
+keep its CONTRACT docstring unchanged at the top of the file, its three @route lines and the
+function names `like_post`, `unlike_post` and `list_likes`, and replace each
+`raise HTTPError(501, ...)` with the implementation below. Put your code below the CONTRACT
+docstring.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: path_id, user_json, visible_post (plus the Request,
+Response and route already imported; add Db only for a helper that takes db: Db). HTTPError is
+not needed: path_id and visible_post raise the 404 themselves.
+
+In every route: pid = path_id(request); visible_post(db, pid, me)    (404)
+  n = int(db.value("SELECT COUNT(*) FROM likes WHERE post_id = ?", pid)) after the change
+POST /api/posts/{id}/like                                  function like_post
+  db.run("INSERT OR IGNORE INTO likes (post_id, user_id, created_at) VALUES (?, ?, ?)",
+         pid, me, request.now)
+  -> 200 {"post_id": pid, "like_count": n, "liked": True}
+DELETE /api/posts/{id}/like                                function unlike_post
+  db.run("DELETE FROM likes WHERE post_id = ? AND user_id = ?", pid, me)
+  -> 200 {"post_id": pid, "like_count": n, "liked": False}
+GET /api/posts/{id}/likes                                  function list_likes
+  rows = db.all("SELECT u.* FROM likes l JOIN users u ON u.id = l.user_id"
+                " WHERE l.post_id = ? ORDER BY l.created_at, u.id", pid)
+  -> 200 {"users": [user_json(r) for r in rows]}
+Tables you may write: likes.
+
+Details:
+- Checks in this order, in all three routes, before anything is written:
+  1. pid = path_id(request)        (a bad id such as "abc" raises 404 itself)
+  2. visible_post(db, pid, me)     (raises 404 itself if the post does not exist, or if its
+                                    author is neither me nor a friend of me)
+  A 404 changes nothing.
+- n counts the likes of this post by every user (me included), counted after the INSERT or
+  DELETE. It is used only in the POST and DELETE answers. pid and n are integers.
+- POST: an author may like their own post. Liking again is not an error: INSERT OR IGNORE keeps
+  the one existing row with its first created_at, and the answer is the same as before.
+- DELETE: removes only me's like of this post (other users' likes and me's likes of other
+  posts stay). Unliking a post that me has not liked is not an error: 200 with the current n
+  and "liked": False.
+- No request body is read; a body, if sent, is ignored.
+- GET lists the users who liked the post, oldest like first; likes with the same created_at
+  are ordered by user id ascending. Each user is user_json(r): exactly the keys "id",
+  "username", "display_name". No likes -> {"users": []}. GET writes nothing.
+- Use the SQL above as one string literal (adjacent literals, never + or f-strings).
+
+Example: kim (id 1, "Kim Ko") and lee (id 2, "Lee Lo") are friends; lee wrote post 7, which
+nobody has liked yet.
+  As kim, POST /api/posts/7/like -> 200 {"post_id": 7, "like_count": 1, "liked": true};
+  the same request again -> the same answer, still one row.
+  As lee, POST /api/posts/7/like -> 200 {"post_id": 7, "like_count": 2, "liked": true}.
+  As lee, GET /api/posts/7/likes -> 200 {"users": [{"id": 1, "username": "kim",
+  "display_name": "Kim Ko"}, {"id": 2, "username": "lee", "display_name": "Lee Lo"}]}.
+  As kim, DELETE /api/posts/7/like -> 200 {"post_id": 7, "like_count": 1, "liked": false};
+  the same request again -> the same answer.
+  A user who is not lee and not a friend of lee gets 404 on all three routes for post 7, and
+  every user gets 404 for /api/posts/555/like when post 555 does not exist.
+
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

@@ -1,0 +1,40 @@
+title = "Updates: unread message and friend request badge counts"
+type = "feat"
+files = [
+  "src/chatbook/features/updates/handler.py",
+  "docs/api/base.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/updates/**"]
+prompt = """
+Implement the feature `updates` in `src/chatbook/features/updates/handler.py`. The file is a
+stub: keep its CONTRACT docstring, its @route line and the function name `get_updates`, and
+replace `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Imports, all from chatbook.core.api: Request, Response, route, unread_count. HTTPError is
+then unused: remove it from the import line (ruff fails on an unused import).
+
+GET /api/updates                                             function get_updates
+  rows = db.all("SELECT conversation_id FROM members WHERE user_id = ?", me)
+  counts = [unread_count(db, r["conversation_id"], me) for r in rows]
+  requests = int(db.value("SELECT COUNT(*) FROM friend_requests WHERE to_id = ?", me))
+  -> 200 {"unread_total": sum(counts),
+          "unread_conversations": the number of counts that are > 0,
+          "friend_requests": requests}
+
+- `unread_total`: sum of `unread_count(db, cid, me)` across all conversations `me` is
+  currently a member of (both direct and group). Messages sent by `me` never count as unread
+  for `me`, and conversations `me` is not in (or has left) are not in `members` for `me`.
+- `unread_conversations`: how many of `me`'s current conversations have `unread_count > 0`
+  (i.e. `sum(1 for c in counts if c > 0)`).
+- `friend_requests`: number of pending incoming friend requests (`to_id = me`); outgoing
+  friend requests (`from_id = me`) do not count.
+- All three values are plain integers (`int`), and a user with no unread messages and no
+  incoming friend requests receives `{"unread_total": 0, "unread_conversations": 0,
+  "friend_requests": 0}`.
+
+Read-only: this route does not write to any table (no INSERT, UPDATE or DELETE; do not mark
+messages read or modify friend requests).
+JSON keys and status codes must match exactly.
+"""

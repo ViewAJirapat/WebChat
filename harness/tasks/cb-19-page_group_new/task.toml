@@ -1,0 +1,41 @@
+title = "New group page: create a group conversation"
+type = "feat"
+files = ["src/chatbook/features/page_group_new/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_group_new/**"]
+prompt = """
+Implement the page `group_new` in `src/chatbook/features/page_group_new/ui.js`. The file is a
+stub: keep its CONTRACT comment and its `CB.page('group_new', ...)` call with
+`title: 'New group'` (no nav, no order, no public, no poll), and replace the stub body with
+`load` and `render` below.
+Reference: docs/ui.md (read-only).
+
+CB.page('group_new', {title: 'New group', load, render})            no nav
+load(): return await CB.api('GET', '/api/friends')                   // {friends: [U]}
+render(d) -> d.friends.length === 0
+  ? CB.el('p', {class: 'muted'}, 'Add friends first')
+  : CB.form({fields: [
+        {name: 'title', label: 'Group name'},
+        {name: 'members', label: 'Members', type: 'checkboxes',
+         options: d.friends.map((f) => ({value: String(f.id), label: f.display_name}))}],
+      submit: 'Create group',
+      onsubmit: async (v) => {
+        const r = await CB.api('POST', '/api/groups',
+                               {title: v.title, member_ids: v.members.map(Number)});
+        CB.go('chat', {id: r.conversation.id}); }})
+Server answer of POST /api/groups: {conversation: C}.
+
+Details:
+- `load()` fetches `GET /api/friends` and returns its `{friends: [U]}` answer.
+- When `d.friends.length === 0`, `render(d)` returns `<p class="muted">Add friends first</p>`
+  and no form.
+- Otherwise `render(d)` returns a `CB.form` with submit button `'Create group'` and two
+  fields in order: `title` (label `'Group name'`, default text type) and `members` (label
+  `'Members'`, type `'checkboxes'`, options mapped from `d.friends` in order as
+  `{value: String(f.id), label: f.display_name}`).
+- On submit, `onsubmit(v)` posts `{title: v.title, member_ids: v.members.map(Number)}` to
+  `POST /api/groups` and then calls `CB.go('chat', {id: r.conversation.id})`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, labels, field names and their order, button labels, and request bodies must match
+exactly; error message texts are not tested.
+"""

@@ -1,0 +1,63 @@
+title = "Chat send: send a message and mark a conversation read"
+type = "feat"
+files = [
+  "src/chatbook/features/chat_send/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/chat_send/**"]
+prompt = """
+Implement the feature `chat_send` in `src/chatbook/features/chat_send/handler.py`. The file is
+a stub: keep its CONTRACT docstring, its two @route lines and the function names `send_message`
+and `read_conversation`, and replace each `raise HTTPError(501, ...)` with the implementation
+below.
+Reference: docs/api/base.md, docs/api/social.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: are_friends, body_str, mark_read, member_ids,
+path_id, post_message, require_member, unread_count (plus the HTTPError, Request, Response and
+route already imported).
+
+POST /api/conversations/{id}/messages  body {"body"}       function send_message
+Checks in this order (the first failing check decides the status):
+  1. cid = path_id(request)                 (a bad or missing id raises 404 itself)
+     conv = require_member(db, cid, me)     (raises 404 itself if the conversation does not
+                                             exist or me is not a member, e.g. me left it)
+  2. text = body_str(request, "body", max_len=2000)
+     (raises 400 itself unless the request body is a JSON object whose "body" is a string;
+     the text is stripped and must then be 1-2000 characters; inner spaces and newlines stay)
+  3. if conv["kind"] == "direct":
+         other = the id in member_ids(db, cid) that is not me
+         not are_friends(db, me, other) -> 403
+     A group has no friendship check: every member may send, friends or not.
+  4. message = post_message(db, cid, me, text, request.now)
+  -> 201 {"message": message}
+
+post_message builds the message JSON itself:
+  {"id", "conversation_id", "sender": user_json of me, "body": the stripped text,
+   "created_at": request.now}
+It also moves the conversation's last_message_id and me's last_read_id to the new message, so
+the new message is unread for every other member and not for the sender.
+Example: me sends {"body": "  see you at 8 "} -> 201, and the message's "body" is
+"see you at 8".
+The friendship is checked on every send: after the two members of a direct conversation
+unfriend each other, neither can send there (403, nothing is stored) until they are friends
+again; a group with the same two members still accepts their messages.
+A failed check (404, 400 or 403) stores nothing.
+
+POST /api/conversations/{id}/read   (no body; a body, if sent, is ignored)
+                                                           function read_conversation
+  1. cid = path_id(request); require_member(db, cid, me)       (404, as above)
+  2. last = mark_read(db, cid, me)
+  -> 200 {"conversation_id": cid, "last_read_id": last, "unread": unread_count(db, cid, me)}
+
+mark_read marks every message of the conversation as read for me and returns me's new
+last_read_id: the id of the conversation's newest message, or 0 when the conversation has no
+messages yet. Only me's read state changes; other members keep their unread messages.
+Reading has no friendship check (members of a direct conversation may still read it after
+unfriending). Reading twice gives the same answer. cid and last are integers (JSON numbers).
+
+Tables you may write: messages, conversations.last_message_id and members.last_read_id, only
+through post_message and mark_read.
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

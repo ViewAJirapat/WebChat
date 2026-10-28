@@ -1,0 +1,56 @@
+diff --git a/src/chatbook/features/groups/handler.py b/src/chatbook/features/groups/handler.py
+index e6e5a63..27b271a 100644
+--- a/src/chatbook/features/groups/handler.py
++++ b/src/chatbook/features/groups/handler.py
+@@ -19,14 +19,48 @@ Tables you may write: conversations.title; conversations and members only throug
+ create_conversation.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    are_friends,
++    body_ids,
++    body_str,
++    conversation_json,
++    create_conversation,
++    path_id,
++    require_member,
++    require_user,
++    route,
++)
+ 
+ 
+ @route("POST", "/api/groups")
+ def create_group(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    title = body_str(request, "title", max_len=50)
++    ids = [i for i in body_ids(request, "member_ids") if i != me]
++    if not ids:
++        raise HTTPError(400, "pick at least one friend")
++    if len(ids) > 49:
++        raise HTTPError(400, "a group has at most 50 members")
++    for uid in ids:
++        require_user(db, uid)
++        if not are_friends(db, me, uid):
++            raise HTTPError(403, "you can only add friends")
++    cid = create_conversation(db, "group", title, me, ids, request.now)
++    return Response(201, {"conversation": conversation_json(db, cid, me)})
+ 
+ 
+ @route("PUT", "/api/groups/{id}")
+ def rename_group(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    cid = path_id(request)
++    conv = require_member(db, cid, me)
++    if conv["kind"] != "group":
++        raise HTTPError(400, "only a group can be renamed")
++    title = body_str(request, "title", max_len=50)
++    db.run("UPDATE conversations SET title = ? WHERE id = ?", title, cid)
++    return Response(200, {"conversation": conversation_json(db, cid, me)})

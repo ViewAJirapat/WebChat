@@ -1,0 +1,43 @@
+title = "Friends: list friends and unfriend"
+type = "feat"
+files = [
+  "src/chatbook/features/friends/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/friends/**"]
+prompt = """
+Implement the feature `friends` in `src/chatbook/features/friends/handler.py`. The file is a
+stub: keep its CONTRACT docstring, its two @route lines and the function names `list_friends`
+and `remove_friend`, and replace each `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: are_friends, path_id, unfriend, user_json (plus
+the HTTPError, Request, Response and route already imported).
+
+GET /api/friends                                 function list_friends
+  rows = db.all("SELECT u.* FROM friendships f JOIN users u ON u.id = f.friend_id"
+                " WHERE f.user_id = ?", me)        (adjacent string literals, not +)
+  sort rows by (row["display_name"].casefold(), row["id"])
+  -> 200 {"friends": [user_json(r) for r in rows]}
+
+  The list holds only me's friends (pending friend requests are not friends), each as
+  user_json (exactly the keys "id", "username", "display_name"; never the whole row).
+  Order: display_name compared case-insensitively; equal names (ignoring case) by id
+  ascending. Example: friends "Zoe" (id 2), "adam" (id 3), "Adam" (id 4)
+  -> [adam (3), Adam (4), Zoe (2)]. No friends -> {"friends": []}.
+  A one-line way to sort:
+    rows.sort(key=lambda row: (str(row["display_name"]).casefold(), int(row["id"])))
+
+DELETE /api/friends/{id}                         function remove_friend
+  1. uid = path_id(request)                      (a bad id raises 404 itself)
+  2. not are_friends(db, me, uid) -> 404         (unknown user, myself, or not a friend)
+  3. unfriend(db, me, uid)                       (removes both directions)
+  -> 200 {"removed": uid}                        (uid is an int)
+  Either friend may remove the other. After it, neither appears in the other's list;
+  every other friendship stays.
+
+Tables you may write: friendships, only through unfriend.
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""

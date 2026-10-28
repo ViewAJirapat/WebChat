@@ -1,0 +1,51 @@
+diff --git a/src/chatbook/features/chat_send/handler.py b/src/chatbook/features/chat_send/handler.py
+index 6b5799c..b9a806a 100644
+--- a/src/chatbook/features/chat_send/handler.py
++++ b/src/chatbook/features/chat_send/handler.py
+@@ -16,14 +16,43 @@ Tables you may write: messages, conversations.last_message_id and members.last_r
+ through post_message and mark_read.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from chatbook.core.api import (
++    HTTPError,
++    Request,
++    Response,
++    are_friends,
++    body_str,
++    mark_read,
++    member_ids,
++    path_id,
++    post_message,
++    require_member,
++    route,
++    unread_count,
++)
+ 
+ 
+ @route("POST", "/api/conversations/{id}/messages")
+ def send_message(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    cid = path_id(request)
++    conv = require_member(db, cid, me)
++    text = body_str(request, "body", max_len=2000)
++    if conv["kind"] == "direct":
++        other = [uid for uid in member_ids(db, cid) if uid != me][0]
++        if not are_friends(db, me, other):
++            raise HTTPError(403, "you can only message friends")
++    message = post_message(db, cid, me, text, request.now)
++    return Response(201, {"message": message})
+ 
+ 
+ @route("POST", "/api/conversations/{id}/read")
+ def read_conversation(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    cid = path_id(request)
++    require_member(db, cid, me)
++    last = mark_read(db, cid, me)
++    unread = unread_count(db, cid, me)
++    return Response(200, {"conversation_id": cid, "last_read_id": last, "unread": unread})

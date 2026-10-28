@@ -1,0 +1,63 @@
+title = "Discover page: friends online now and people you may know"
+type = "feat"
+files = ["src/chatbook/features/page_discover/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_discover/**"]
+prompt = """
+Implement the page `discover` in `src/chatbook/features/page_discover/ui.js`. The file is a
+stub: keep its CONTRACT comment block unchanged at the top of the file and its
+`CB.page('discover', ...)` call with `title: 'Discover'`, `nav: 'Discover'` and `order: 35`,
+and replace the stub's `render` with `poll: 15000`, `load` and `render` below. Leave one blank
+line after the CONTRACT block and put all your code below it.
+Reference: docs/ui.md (read-only).
+
+CB.page('discover', {title: 'Discover', nav: 'Discover', order: 35, poll: 15000, load, render})
+load(): const on = await CB.api('GET', '/api/friends/online')
+        const sg = await CB.api('GET', '/api/friends/suggestions')
+        return {online: on.online, suggestions: sg.suggestions}
+render(d) -> CB.el('div', {class: 'stack'}, in this order:
+  CB.el('h2', {}, 'Online now'),
+  d.online.length ? d.online.map((u) => CB.el('div', {class: 'item'}, CB.avatar(u), CB.userLink(u),
+      CB.el('button', {testid: 'message-' + u.id, onclick: async () => {
+          const r = await CB.api('POST', '/api/dm', {user_id: u.id});
+          CB.go('chat', {id: r.conversation.id}); }}, 'Message')))
+    : CB.el('p', {class: 'muted'}, 'Nobody is online'),
+  CB.el('h2', {}, 'People you may know'),
+  d.suggestions.length ? d.suggestions.map((s) => CB.el('div', {class: 'item'}, CB.avatar(s),
+      CB.userLink(s), CB.el('span', {class: 'muted'}, CB.plural(s.mutual, 'mutual friend')),
+      CB.el('button', {testid: 'add-' + s.id, onclick: async () => {
+          await CB.api('POST', '/api/friends/requests', {user_id: s.id});
+          CB.toast('Request sent'); CB.refresh(); }}, 'Add friend')))
+    : CB.el('p', {class: 'muted'}, 'No suggestions'))
+Server answers: {online: [U]}; {suggestions: [U + mutual]}.
+(U = {id, username, display_name}; a suggestion is a U with one more key, mutual: an integer.)
+
+Details:
+- The page has `title: 'Discover'`, `nav: 'Discover'`, `order: 35` and `poll: 15000`, so load
+  and render run again every 15000 ms. It is not public.
+- `load()` makes exactly two requests, in this order: `GET /api/friends/online`, then
+  `GET /api/friends/suggestions`, and returns `{online: on.online, suggestions: sg.suggestions}`.
+- `render(d)` returns one `<div class="stack">` whose children are, in this order: the `<h2>`
+  `Online now`; the online rows, or `<p class="muted">Nobody is online</p>` when `d.online` is
+  empty; the `<h2>` `People you may know`; the suggestion rows, or
+  `<p class="muted">No suggestions</p>` when `d.suggestions` is empty.
+- Online row, one per user u, in list order: a `<div class="item">` holding `CB.avatar(u)`,
+  `CB.userLink(u)` and a button `'Message'` with testid `'message-' + u.id`. Its click posts
+  `{user_id: u.id}` to `/api/dm` and then calls `CB.go('chat', {id: r.conversation.id})` with
+  the conversation id from the answer. No toast and no `CB.refresh()`.
+- Suggestion row, one per suggestion s, in list order: a `<div class="item">` holding
+  `CB.avatar(s)`, `CB.userLink(s)`, a `<span class="muted">` with
+  `CB.plural(s.mutual, 'mutual friend')` (`'1 mutual friend'`, `'7 mutual friends'`) and a
+  button `'Add friend'` with testid `'add-' + s.id`. Its click posts `{user_id: s.id}` to
+  `/api/friends/requests`, then calls `CB.toast('Request sent')` and `CB.refresh()`.
+- Do not write `try`/`catch`: on an error answer `CB.api` shows the error and stops the click
+  handler, so no 'Request sent' toast, no refresh and no navigation follow.
+
+Example: online `[{id: 8, username: 'gina', display_name: 'Gina Gold'}]` and suggestions
+`[{id: 9, username: 'hugo', display_name: 'Hugo Hart', mutual: 7}]`: the page reads
+"Online now Gina Gold Message People you may know Hugo Hart 7 mutual friends Add friend".
+Clicking `message-8` with the answer `{conversation: {id: 12, ...}}` opens `chat` with
+`{id: 12}`; clicking `add-9` posts `{user_id: 9}`, shows 'Request sent' and reloads both lists.
+
+Texts, headings, classes, testids, button labels, request paths/bodies and element order must
+match exactly; error message texts are not tested.
+"""

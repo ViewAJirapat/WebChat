@@ -1,0 +1,56 @@
+title = "Presence: list the friends who are online"
+type = "feat"
+files = [
+  "src/chatbook/features/presence/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/presence/**"]
+prompt = """
+Implement the feature `presence` in `src/chatbook/features/presence/handler.py`. The file is a
+stub: keep its CONTRACT docstring unchanged at the top of the file, its @route line and the
+function name `online_friends`, and replace the `raise HTTPError(501, ...)` with the
+implementation below. Put your code below the CONTRACT docstring.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: user_json (plus the Request, Response and route
+already imported). Remove HTTPError from the import: this route has no error case, and an
+unused import fails the lint gate.
+
+GET /api/friends/online                                    function online_friends
+  rows = db.all("SELECT u.* FROM friendships f JOIN users u ON u.id = f.friend_id"
+                " WHERE f.user_id = ? AND u.last_seen_at >= ?", me, request.now - 60000)
+  sort by (row["display_name"].casefold(), row["id"])
+  -> 200 {"online": [user_json(r) for r in rows]}
+(The app sets last_seen_at = now on every logged-in request; 0 means never.) Read-only.
+
+Details:
+- A friend is online when their last_seen_at >= request.now - 60000, that is when they were
+  last seen at most 60000 ms ago. Exactly 60000 ms ago counts (>=, not >); 60001 ms ago does
+  not. A friend never seen (last_seen_at 0) is not online.
+- Only me's current friends are listed (friendships rows with user_id = me). Pending friend
+  requests in either direction, friends of friends and every other user are never listed, and
+  me is never in my own list. How long ago a friendship started does not matter; only the
+  friend's last_seen_at does.
+- Order: display_name compared case-insensitively (casefold); names that are equal ignoring
+  case are ordered by id ascending. A one-line way to sort:
+    rows.sort(key=lambda row: (str(row["display_name"]).casefold(), int(row["id"])))
+- Each item is user_json(r): exactly the keys "id", "username", "display_name" (never the
+  whole row, so no bio or last_seen_at). No friend online -> 200 {"online": []}.
+- Read-only: the handler writes nothing. The app has already set me's own last_seen_at before
+  the handler runs; do not update last_seen_at yourself. No request body or query is read.
+- Use the SQL above as one string literal (adjacent literals, never + or f-strings), with the
+  two ? values me and request.now - 60000.
+
+Example: nora (id 1) is friends with ted (id 2, "Ted Tran"), amy (id 3, "amy li") and ken
+(id 4, "Ken Ko"); sam (id 5, "Sam Sun") is not her friend. At time T, ted was last seen at
+T - 10000, amy at T - 60000, ken at T - 60001 and sam at T - 1000.
+  As nora at T, GET /api/friends/online -> 200 {"online": [{"id": 3, "username": "amy",
+  "display_name": "amy li"}, {"id": 2, "username": "ted", "display_name": "Ted Tran"}]}
+  (ken was seen too long ago, sam is not a friend; "amy li" sorts before "Ted Tran").
+  Friends "Kit" (id 9) and "kit" (id 6), both online -> kit (id 6) first, then Kit (id 9).
+  A user with no friends, or whose friends are all offline -> 200 {"online": []}.
+
+Tables you may write: none (read-only).
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

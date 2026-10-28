@@ -1,0 +1,68 @@
+title = "DM: open a direct conversation with a friend"
+type = "feat"
+files = [
+  "src/chatbook/features/dm/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/dm/**"]
+prompt = """
+Implement the feature `dm` in `src/chatbook/features/dm/handler.py`. The file is a stub: keep
+its CONTRACT docstring, its @route line and the function name `open_dm`, and replace the
+`raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md, docs/api/social.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: are_friends, body_id, conversation_json,
+create_conversation, find_direct, require_user (plus the HTTPError, Request, Response and
+route already imported).
+
+POST /api/dm  body {"user_id"}                     function open_dm
+Checks in exactly this order:
+  1. other = body_id(request, "user_id")
+     (missing, not a positive integer, true/false, a string such as "2", or a body that is
+     not an object -> 400 itself)
+  2. other == me -> 400                            (no conversation with yourself)
+  3. require_user(db, other)                       (unknown user -> 404 itself)
+  4. not are_friends(db, me, other) -> 403
+  5. cid = find_direct(db, me, other)
+     found (not None) -> status 200
+     None -> cid = create_conversation(db, "direct", "", me, [other], request.now)
+             and status 201
+  -> return Response(status, {"conversation": conversation_json(db, cid, me)})
+  Errors: raise HTTPError(400, "<any message>") in step 2 and HTTPError(403, "<any message>")
+  in step 4; steps 1 and 3 raise by themselves.
+
+Details:
+- Keep the check order. Step 3 comes before step 4, so an unknown id is 404, not 403.
+  Step 4 comes before step 5: if two users had a direct conversation and are no longer
+  friends, opening it is 403 (the old conversation stays as it is). A pending friend
+  request (in either direction) is not a friendship: 403.
+- A 400, 403 or 404 changes nothing: no conversations row and no members rows.
+- Two users have at most one direct conversation. Opening it again, by either of the two
+  users, returns the same conversation with status 200 and creates nothing. find_direct
+  finds only the direct conversation of the two users: a group that has the same two
+  members does not count, so a new direct conversation is still created (201).
+- create_conversation stores kind "direct", title "", created_by me, created_at
+  request.now, and adds me and other as members. Never insert these rows yourself.
+- The response is {"conversation": C}, where C = conversation_json(db, cid, me), always
+  built for me (the caller), never for other. In C, "title" is the other member's
+  display_name, "members" are both users as user_json sorted by id, "last_message" is the
+  newest message or None (JSON null), "unread" counts the messages from other that me has not read,
+  and "updated_at" is the newest message's created_at, else the conversation's
+  created_at. Opening a conversation does not mark it read.
+
+Example: users rosa ("Rosa Park", id 1) and tom ("Tom Lee", id 2) are friends;
+request.now is 1700000090000. As tom, POST {"user_id": 1} -> 201 {"conversation":
+{"id": 1, "kind": "direct", "title": "Rosa Park",
+"members": [{"id": 1, "username": "rosa", "display_name": "Rosa Park"},
+{"id": 2, "username": "tom", "display_name": "Tom Lee"}],
+"last_message": null, "unread": 0, "updated_at": 1700000090000}}. Then as rosa, POST
+{"user_id": 2} -> 200 with the same conversation id 1 and "title": "Tom Lee". As rosa,
+POST {"user_id": 1} -> 400. POST {"user_id": 77} (no such user) -> 404. A user who is not
+tom's friend posting {"user_id": 2} -> 403.
+
+Tables you may write: conversations and members, only through create_conversation.
+JSON keys, status codes and quoted texts must match exactly; error message texts are not
+tested.
+"""

@@ -1,0 +1,62 @@
+diff --git a/src/chatbook/features/profiles/handler.py b/src/chatbook/features/profiles/handler.py
+index 88e9f8e..b7d26d9 100644
+--- a/src/chatbook/features/profiles/handler.py
++++ b/src/chatbook/features/profiles/handler.py
+@@ -23,14 +23,54 @@ PUT /api/profile  body {"display_name", "bio"}
+ Tables you may write: users.display_name and users.bio.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from typing import Any
++
++from chatbook.core.api import (
++    Db,
++    Request,
++    Response,
++    body_str,
++    friend_ids,
++    path_id,
++    relationship,
++    require_user,
++    route,
++)
++
++
++def _profile_json(db: Db, me: int, row: dict[str, Any]) -> dict[str, Any]:
++    uid = int(row["id"])
++    rel = relationship(db, me, uid)
++    if rel == "request_sent":
++        rid = db.value("SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?", me, uid)
++    elif rel == "request_received":
++        rid = db.value("SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?", uid, me)
++    else:
++        rid = None
++    return {
++        "id": uid,
++        "username": row["username"],
++        "display_name": row["display_name"],
++        "bio": row["bio"],
++        "joined_at": row["created_at"],
++        "relationship": rel,
++        "friend_count": len(friend_ids(db, uid)),
++        "request_id": rid,
++    }
+ 
+ 
+ @route("GET", "/api/users/{id}")
+ def get_profile(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    uid = path_id(request)
++    row = require_user(request.db, uid)
++    return Response(200, {"user": _profile_json(request.db, request.me.id, row)})
+ 
+ 
+ @route("PUT", "/api/profile")
+ def update_profile(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    me = request.me.id
++    display_name = body_str(request, "display_name", max_len=50)
++    bio = body_str(request, "bio", min_len=0, max_len=300)
++    request.db.run("UPDATE users SET display_name = ?, bio = ? WHERE id = ?", display_name, bio, me)
++    row = require_user(request.db, me)
++    return Response(200, {"user": _profile_json(request.db, me, row)})

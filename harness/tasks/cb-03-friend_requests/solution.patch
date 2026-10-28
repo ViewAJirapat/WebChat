@@ -1,0 +1,77 @@
+diff --git a/src/chatbook/features/friend_requests/handler.py b/src/chatbook/features/friend_requests/handler.py
+index 03fde16..0c76f68 100644
+--- a/src/chatbook/features/friend_requests/handler.py
++++ b/src/chatbook/features/friend_requests/handler.py
+@@ -22,14 +22,69 @@ GET /api/friends/requests
+ Tables you may write: friend_requests (insert); friendships only through befriend.
+ """
+ 
+-from chatbook.core.api import HTTPError, Request, Response, route
++from typing import Any
++
++from chatbook.core.api import (
++    Db,
++    HTTPError,
++    Request,
++    Response,
++    are_friends,
++    befriend,
++    body_id,
++    require_user,
++    route,
++    user_json,
++)
++
++FIND = "SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?"
++
++
++def request_json(db: Db, row: dict[str, Any]) -> dict[str, Any]:
++    return {
++        "id": row["id"],
++        "from": user_json(require_user(db, row["from_id"])),
++        "to": user_json(require_user(db, row["to_id"])),
++        "created_at": row["created_at"],
++    }
+ 
+ 
+ @route("POST", "/api/friends/requests")
+ def send_request(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    other = body_id(request, "user_id")
++    if other == me:
++        raise HTTPError(400, "you cannot add yourself")
++    require_user(db, other)
++    if are_friends(db, me, other):
++        raise HTTPError(409, "already friends")
++    if db.one(FIND, me, other) is not None:
++        raise HTTPError(409, "request already sent")
++    if db.one(FIND, other, me) is not None:
++        befriend(db, me, other, request.now)
++        friend = user_json(require_user(db, other))
++        return Response(200, {"status": "friends", "friend": friend})
++    rid = db.run(
++        "INSERT INTO friend_requests (from_id, to_id, created_at) VALUES (?, ?, ?)",
++        me,
++        other,
++        request.now,
++    )
++    row = {"id": rid, "from_id": me, "to_id": other, "created_at": request.now}
++    return Response(201, {"status": "pending", "request": request_json(db, row)})
+ 
+ 
+ @route("GET", "/api/friends/requests")
+ def list_requests(request: Request) -> Response:
+-    raise HTTPError(501, "not implemented")
++    db = request.db
++    me = request.me.id
++    incoming = db.all("SELECT * FROM friend_requests WHERE to_id = ? ORDER BY id DESC", me)
++    outgoing = db.all("SELECT * FROM friend_requests WHERE from_id = ? ORDER BY id DESC", me)
++    return Response(
++        200,
++        {
++            "incoming": [request_json(db, r) for r in incoming],
++            "outgoing": [request_json(db, r) for r in outgoing],
++        },
++    )

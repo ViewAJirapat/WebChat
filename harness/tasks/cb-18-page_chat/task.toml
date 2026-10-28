@@ -1,0 +1,61 @@
+title = "Chat page: conversation thread and message composer"
+type = "feat"
+files = ["src/chatbook/features/page_chat/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_chat/**"]
+prompt = """
+Implement the page `chat` in `src/chatbook/features/page_chat/ui.js`. The file is a stub:
+keep its CONTRACT comment and its `CB.page('chat', ...)` call with `title: 'Chat'` and
+`poll: 2000` (no `nav`), and replace the stub body with `load` and `render` below.
+Reference: docs/ui.md (read-only).
+
+CB.page('chat', {title: 'Chat', poll: 2000, load, render})          no nav
+load(params):
+  const limit = Number(params.limit || 50)
+  const d = await CB.api('GET', '/api/conversations/' + params.id)        // {conversation, reads}
+  const h = await CB.api('GET', '/api/conversations/' + params.id + '/messages' + CB.qs({limit}))
+  if (d.conversation.unread > 0) await CB.api('POST', '/api/conversations/' + params.id + '/read')
+  return {conv: d.conversation, reads: d.reads, messages: h.messages, hasMore: h.has_more, limit}
+render(d, params) -> CB.el('div', {class: 'stack'}, in this order:
+  CB.el('div', {class: 'row'}, CB.el('h2', {}, d.conv.title),
+        d.conv.kind === 'group'
+          ? CB.el('button', {onclick: () => CB.go('group', {id: params.id})}, 'Group settings')
+          : null),
+  CB.el('div', {class: 'muted'}, d.conv.members.map((m) => m.display_name).join(', ')),
+  d.hasMore ? CB.el('button', {onclick: () => CB.go('chat', {id: params.id, limit: d.limit + 50})},
+                    'Show older') : null,
+  CB.el('div', {class: 'messages'},
+        d.messages.length ? d.messages.map(row) : CB.el('p', {class: 'muted'}, 'Say hi!')),
+  seen(d) ? CB.el('div', {class: 'muted'}, 'Seen') : null,
+  CB.form({fields: [{name: 'body', label: 'Write a message'}], submit: 'Send', reset: true,
+           onsubmit: async (v) => {
+             const text = v.body.trim();
+             if (text === '') return;
+             await CB.api('POST', '/api/conversations/' + params.id + '/messages', {body: text});
+             CB.refresh(); }}))
+row(m) = CB.el('div', {class: m.sender.id === CB.me.id ? 'msg mine' : 'msg'}, CB.avatar(m.sender),
+  CB.el('b', {}, m.sender.display_name), ': ', m.body, ' ',
+  CB.el('small', {class: 'muted'}, CB.time(m.created_at)))
+seen(d): mine = the messages whose sender.id === CB.me.id; none -> false; last = id of the last
+  of them; true when some r in d.reads has r.user_id !== CB.me.id and r.last_read_id >= last
+Server answers: GET /api/conversations/{id} -> {conversation: C, reads: [{user_id,
+last_read_id}]}; GET .../messages -> {messages: [M], has_more}; POST .../messages ->
+{message: M}; POST .../read -> {conversation_id, last_read_id, unread}.
+
+Details:
+- The page has `title: 'Chat'`, `poll: 2000`, and no `nav`.
+- `load(params)` parses `limit = Number(params.limit || 50)`, fetches the conversation and its
+  messages in that order, calls `POST /api/conversations/<id>/read` only when
+  `d.conversation.unread > 0`, and returns `{conv, reads, messages, hasMore, limit}`.
+- `'Group settings'` is shown only when `d.conv.kind === 'group'`.
+- `'Show older'` is shown only when `d.hasMore` is truthy, and navigates to
+  `CB.go('chat', {id: params.id, limit: d.limit + 50})`.
+- `'Seen'` is shown only when `d.messages` contains at least one message sent by `CB.me.id` and
+  some entry in `d.reads` for another user (`r.user_id !== CB.me.id`) has `r.last_read_id >= last`,
+  where `last` is the `id` of the last message in `d.messages` sent by `CB.me.id`.
+- Submitting the `'Send'` form trims `v.body`; if empty, it returns without calling `CB.api` or
+  `CB.refresh()`. Otherwise it posts `{body: text}` and calls `CB.refresh()`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, headings, classes, field names, button labels, request paths/bodies and element order
+must match exactly; error message texts are not tested.
+"""

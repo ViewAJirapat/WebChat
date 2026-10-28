@@ -1,0 +1,72 @@
+title = "Profiles: view a user profile and edit your own profile"
+type = "feat"
+files = [
+  "src/chatbook/features/profiles/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+]
+scope = ["src/chatbook/features/profiles/**"]
+prompt = """
+Implement the feature `profiles` in `src/chatbook/features/profiles/handler.py`. The file is a
+stub: keep its CONTRACT docstring, its two @route lines and the function names `get_profile`
+and `update_profile`, and replace each `raise HTTPError(501, ...)` with the implementation below.
+Reference: docs/api/base.md and docs/api/social.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: Db, HTTPError, Request, Response, body_str,
+friend_ids, path_id, relationship, require_user, route.
+
+Profile shape P(row), built from a users row:
+  P(row) = {"id": row["id"], "username": row["username"], "display_name": row["display_name"],
+            "bio": row["bio"], "joined_at": row["created_at"],
+            "relationship": rel, "friend_count": len(friend_ids(db, row["id"])),
+            "request_id": rid}
+  where rel = relationship(db, me, row["id"]) and rid =
+    db.value("SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?", me, row["id"])
+      if rel == "request_sent";
+    db.value("SELECT id FROM friend_requests WHERE from_id = ? AND to_id = ?", row["id"], me)
+      if rel == "request_received";
+    else None
+
+rel is one of "self", "friends", "request_sent", "request_received", "none" (computed by
+relationship(db, me, row["id"])).
+"friend_count" is the number of friends of row["id"] (the target user, not me).
+"request_id" is the integer id of the pending friend request between me and row["id"] when rel
+is "request_sent" (me -> row["id"]) or "request_received" (row["id"] -> me), and None (JSON
+null) when rel is "self", "friends" or "none".
+
+GET /api/users/{id}                                        function get_profile
+  1. uid = path_id(request)                 (a bad or missing id raises 404 itself)
+     row = require_user(db, uid)            (unknown user -> 404 itself)
+  -> 200 {"user": P(row)}
+
+Any logged-in user may view any existing user's profile (stranger, pending request, friend, or
+self).
+
+PUT /api/profile  body {"display_name", "bio"}             function update_profile
+Checks in this order (the first failing check decides the status):
+  1. display_name = body_str(request, "display_name", max_len=50)
+     (raises 400 itself unless the request body is a JSON object whose "display_name" is a
+     string of 1-50 characters after strip(); stored stripped)
+  2. bio = body_str(request, "bio", min_len=0, max_len=300)
+     (raises 400 itself unless "bio" is present and a string of 0-300 characters after strip();
+     an empty or whitespace-only bio strips to "" and is allowed; stored stripped)
+  3. db.run("UPDATE users SET display_name = ?, bio = ? WHERE id = ?", display_name, bio, me)
+  -> 200 {"user": P(require_user(db, me))}
+
+Only me's display_name and bio change; other columns and other users are untouched. When viewing
+or updating me's own profile, "relationship" is "self" and "request_id" is None. A 400 changes
+nothing.
+
+Example: users ana ("Ana Diaz", id 1, created_at 1700000000000) and ben ("Ben Ng", id 2,
+created_at 1700000000000) with default bio ""; ben sent friend request id 4 to ana, and ana has
+2 friends. As ana, GET /api/users/2 -> 200 {"user": {"id": 2, "username": "ben",
+"display_name": "Ben Ng", "bio": "", "joined_at": 1700000000000,
+"relationship": "request_received", "friend_count": 0, "request_id": 4}}. As ana, PUT
+/api/profile {"display_name": "  Ana D. ", "bio": "  hello world "} -> 200 {"user": {"id": 1,
+"username": "ana", "display_name": "Ana D.", "bio": "hello world", "joined_at": 1700000000000,
+"relationship": "self", "friend_count": 2, "request_id": null}}.
+
+Tables you may write: users.display_name and users.bio.
+JSON keys, status codes, list order and quoted texts must match exactly; error message
+texts are not tested.
+"""

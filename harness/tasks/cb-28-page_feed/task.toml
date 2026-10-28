@@ -1,0 +1,72 @@
+title = "Feed page: posts by you and your friends, likes and a post form"
+type = "feat"
+files = ["src/chatbook/features/page_feed/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_feed/**"]
+prompt = """
+Implement the page `feed` in `src/chatbook/features/page_feed/ui.js`. The file is a stub:
+keep its CONTRACT comment unchanged at the top of the file and its `CB.page('feed', ...)` call
+with `title: 'Feed'`, `nav: 'Feed'` and `order: 40`; add `poll: 15000`, `load` and `render`
+below, replacing the stub's `render`. Write your code below the CONTRACT comment, after a
+blank line.
+Reference: docs/ui.md (read-only).
+
+CB.page('feed', {title: 'Feed', nav: 'Feed', order: 40, poll: 15000, load, render})
+load(params): return await CB.api('GET', '/api/feed' + CB.qs({limit: Number(params.limit || 20)}))
+render(d, params) -> CB.el('div', {class: 'stack'},
+  CB.form({fields: [{name: 'body', label: 'What is on your mind?', type: 'textarea'}],
+           submit: 'Post', reset: true,
+           onsubmit: async (v) => {
+             const text = v.body.trim();
+             if (text === '') return;
+             await CB.api('POST', '/api/posts', {body: text});
+             CB.refresh(); }}),
+  d.posts.length ? d.posts.map(card) : CB.el('p', {class: 'muted'}, 'No posts yet'),
+  d.has_more ? CB.el('button', {onclick: () => CB.go('feed',
+      {limit: Number(params.limit || 20) + 20})}, 'Show more') : null)
+card(p) = CB.el('div', {class: 'card'},
+  CB.el('div', {class: 'row'}, CB.avatar(p.author), CB.userLink(p.author),
+        CB.el('small', {class: 'muted'}, CB.time(p.created_at))),
+  CB.el('p', {}, p.body),
+  CB.el('div', {class: 'row'},
+    CB.el('button', {testid: 'like-' + p.id, onclick: async () => {
+        await CB.api(p.liked ? 'DELETE' : 'POST', '/api/posts/' + p.id + '/like');
+        CB.refresh(); }}, (p.liked ? 'Unlike' : 'Like') + ' (' + p.like_count + ')'),
+    CB.el('button', {testid: 'comments-' + p.id, onclick: () => CB.go('post', {id: p.id})},
+          'Comments (' + p.comment_count + ')'),
+    p.author.id === CB.me.id ? CB.el('button', {testid: 'delete-' + p.id, onclick: async () => {
+        await CB.api('DELETE', '/api/posts/' + p.id); CB.refresh(); }}, 'Delete') : null))
+Server answer: {posts: [Post], has_more}, Post = {id, author: U, body, created_at, like_count,
+comment_count, liked}.
+
+Details:
+- The page polls every 15000 ms (`poll: 15000`): load and render run again.
+- `load(params)` makes one call, `GET /api/feed?limit=<n>` with n = `Number(params.limit || 20)`
+  (`?limit=20` when the page has no `limit` param), and returns the answer `{posts, has_more}`.
+- `render(d, params)` returns one `<div class="stack">` holding, in this order: the form; then
+  one card per post, in the order of `d.posts` (or `<p class="muted">No posts yet</p>` when
+  `d.posts` is empty); then the 'Show more' button, only when `d.has_more` is true.
+- The form has one `textarea` field named `body` labelled 'What is on your mind?', the submit
+  button 'Post' and `reset: true`. On submit, trim `v.body`; when the trimmed text is empty,
+  return without calling `CB.api` or `CB.refresh()`; otherwise send `POST /api/posts` with
+  `{body: text}` (the trimmed text), then call `CB.refresh()`.
+- 'Show more' calls `CB.go('feed', {limit: Number(params.limit || 20) + 20})`: no `limit`
+  param -> 40; `limit` '40' -> 60. Keep `Number(...)`: params are strings.
+- `card(p)` is one `<div class="card">` holding, in this order: a `<div class="row">` with
+  `CB.avatar(p.author)`, `CB.userLink(p.author)` and a `<small class="muted">` showing
+  `CB.time(p.created_at)`; a `<p>` with `p.body`; a `<div class="row">` with the buttons below.
+- Like button (testid `like-<id>`): label 'Unlike (<like_count>)' when `p.liked` is true, else
+  'Like (<like_count>)'. Click: `DELETE /api/posts/<id>/like` when `p.liked`, else
+  `POST /api/posts/<id>/like`, both with no body, then `CB.refresh()`.
+- Comments button (testid `comments-<id>`): label 'Comments (<comment_count>)'. Click:
+  `CB.go('post', {id: p.id})`.
+- Delete button (testid `delete-<id>`): label 'Delete', only when `p.author.id === CB.me.id`.
+  Click: `DELETE /api/posts/<id>` with no body, then `CB.refresh()`.
+- Example: post {id: 4, author: Bob, like_count: 2, liked: false, comment_count: 5} shows
+  'Like (2)' (like-4) and 'Comments (5)' (comments-4); when Bob is logged in it also shows
+  'Delete' (delete-4).
+- Define `card` above the `CB.page` call, e.g. `const card = (p) => CB.el('div', ...);`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, labels, classes, field names, testids, request paths/bodies and element order must
+match exactly; error message texts are not tested.
+"""

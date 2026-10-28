@@ -1,0 +1,68 @@
+diff --git a/src/chatbook/features/page_people/ui.js b/src/chatbook/features/page_people/ui.js
+index 3c53227..fcd2827 100644
+--- a/src/chatbook/features/page_people/ui.js
++++ b/src/chatbook/features/page_people/ui.js
+@@ -23,9 +23,62 @@
+ //                           CB.go('chat', {id: r.conversation.id}); }}, 'Message')
+ // Server answers: GET /api/users -> {users: [{id, username, display_name, relationship}]};
+ // POST /api/dm -> {conversation: {id, ...}}.
++function action(u) {
++  if (u.relationship === 'none') {
++    return CB.el('button', {
++      testid: 'add-' + u.id,
++      onclick: async () => {
++        await CB.api('POST', '/api/friends/requests', {user_id: u.id});
++        CB.toast('Request sent');
++        CB.refresh();
++      },
++    }, 'Add friend');
++  }
++  if (u.relationship === 'request_sent') {
++    return CB.el('button', {disabled: true}, 'Requested');
++  }
++  if (u.relationship === 'request_received') {
++    return CB.el('button', {onclick: () => CB.go('friends')}, 'Respond');
++  }
++  if (u.relationship === 'friends') {
++    return CB.el('button', {
++      testid: 'message-' + u.id,
++      onclick: async () => {
++        const r = await CB.api('POST', '/api/dm', {user_id: u.id});
++        CB.go('chat', {id: r.conversation.id});
++      },
++    }, 'Message');
++  }
++  return null;
++}
++
++function row(u) {
++  return CB.el('div', {class: 'item'},
++    CB.avatar(u),
++    CB.userLink(u),
++    CB.el('span', {class: 'muted'}, '@' + u.username),
++    action(u));
++}
++
+ CB.page('people', {
+   title: 'People',
+   nav: 'People',
+   order: 30,
+-  render: () => CB.el('p', {class: 'muted'}, 'Coming soon'),
++  load: async (params) => {
++    const q = (params.q || '').trim();
++    if (q === '') return {q: '', users: null};
++    const r = await CB.api('GET', '/api/users' + CB.qs({q}));
++    return {q, users: r.users};
++  },
++  render: (d) => CB.el('div', {class: 'stack'},
++    CB.form({
++      fields: [{name: 'q', label: 'Search people', value: d.q}],
++      submit: 'Search',
++      onsubmit: (v) => CB.go('people', {q: v.q.trim()}),
++    }),
++    d.users === null
++      ? CB.el('p', {class: 'muted'}, 'Search by name or username')
++      : d.users.length === 0
++        ? CB.el('p', {class: 'muted'}, 'No people found')
++        : d.users.map(row)),
+ });

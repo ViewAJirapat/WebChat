@@ -1,0 +1,49 @@
+title = "Login page: log in and create an account"
+type = "feat"
+files = ["src/chatbook/features/page_login/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_login/**"]
+prompt = """
+Implement the page `login` in `src/chatbook/features/page_login/ui.js`. The file is a stub:
+keep its CONTRACT comment and its `CB.page('login', ...)` call with `title: 'Welcome'` and
+`public: true` (no nav, no order, no load, no poll), and replace the stub `render` with the
+implementation below.
+Reference: docs/ui.md (read-only).
+
+CB.page('login', {title: 'Welcome', public: true, render})      no nav, no load
+render() -> CB.el('div', {class: 'stack narrow'}, these four, in this order:
+  CB.el('h2', {}, 'Log in')
+  CB.form({fields: [{name: 'username', label: 'Username'},
+                    {name: 'password', label: 'Password', type: 'password'}],
+           submit: 'Log in',
+           onsubmit: async (v) => {
+             const r = await CB.api('POST', '/api/auth/login',
+                                    {username: v.username, password: v.password});
+             CB.login(r.token, r.user); }})
+  CB.el('h2', {}, 'Create account')
+  CB.form({fields: [{name: 'username', label: 'Username'},
+                    {name: 'display_name', label: 'Display name'},
+                    {name: 'password', label: 'Password', type: 'password'}],
+           submit: 'Create account',
+           onsubmit: async (v) => {
+             const r = await CB.api('POST', '/api/auth/register',
+                 {username: v.username, password: v.password, display_name: v.display_name});
+             CB.login(r.token, r.user); }}))
+Server answers: {token, user}. No try/catch.
+
+Details:
+- The page is for logged-out users. It calls no API while it is shown: the only requests
+  are the two POSTs above, one per submit of the matching form.
+- Each form sends its own field values exactly as typed: no trim, no lowercasing and no
+  checks of your own (an empty field is sent as ''). The login body has exactly the keys
+  username and password; the register body exactly username, password and display_name.
+- On success call CB.login(r.token, r.user) with the token and the user from the answer
+  (not the typed values). CB.login stores the session and opens 'inbox' itself: do not call
+  CB.go, CB.refresh or CB.toast.
+- On an error answer (400 bad input, 401 wrong username or password, 409 username taken)
+  CB.api shows the server's message and stops the onsubmit: no try/catch, no toast of your
+  own, no CB.login. The page stays as it is with the typed text, so the user can correct a
+  field and submit again.
+
+Texts, labels, field names and their order, button labels, request bodies and the order of
+the four children must match exactly; error message texts are not tested.
+"""

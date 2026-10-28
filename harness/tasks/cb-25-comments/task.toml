@@ -1,0 +1,76 @@
+title = "Comments: list, add and delete comments on a post"
+type = "feat"
+files = [
+  "src/chatbook/features/comments/handler.py",
+  "docs/api/base.md",
+  "docs/api/posts.md",
+]
+scope = ["src/chatbook/features/comments/**"]
+prompt = """
+Implement the feature `comments` in `src/chatbook/features/comments/handler.py`. The file is a
+stub: keep its CONTRACT docstring unchanged at the top of the file, keep its three @route lines
+and the function names `list_comments`, `add_comment` and `delete_comment`, and replace each
+`raise HTTPError(501, ...)` with the implementation below. Put all your code below the
+CONTRACT docstring.
+Reference: docs/api/base.md and docs/api/posts.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: Db, body_str, path_id, require_user, user_json,
+visible_post (plus the HTTPError, Request, Response and route already imported), and Any from
+typing.
+
+Comment shape K(row), built from a comments row. Write it once in this file as a helper,
+def comment_json(db: Db, row: dict[str, Any]) -> dict[str, Any]:
+  K(row) = {"id": row["id"], "post_id": row["post_id"],
+            "author": user_json(require_user(db, row["author_id"])), "body": row["body"],
+            "created_at": row["created_at"]}
+"author" is the comment author's user_json: exactly the keys "id", "username",
+"display_name" (never the whole users row).
+
+visible_post(db, pid, me) returns the posts row, and raises 404 itself when the post does not
+exist or its author is neither me nor a friend of me.
+
+GET /api/posts/{id}/comments                               function list_comments
+  1. pid = path_id(request)                 (a bad or missing id raises 404 itself)
+     visible_post(db, pid, me)              (404 itself, see above)
+  2. rows = db.all("SELECT * FROM comments WHERE post_id = ? ORDER BY id", pid)
+  -> 200 {"comments": [K(r) for r in rows]}
+  The list holds only this post's comments, in id order (by id, not by created_at), by any author (also
+  authors who are not friends of me). A post without comments -> {"comments": []}.
+
+POST /api/posts/{id}/comments  body {"body"}               function add_comment
+Checks in this order (the first failing check decides the status):
+  1. pid = path_id(request); visible_post(db, pid, me)          (404, as above)
+  2. text = body_str(request, "body", max_len=1000)
+     (raises 400 itself unless the request body is a JSON object whose "body" is a string;
+     the text is stripped and must then be 1-1000 characters; inner spaces and newlines stay)
+  3. cid = db.run("INSERT INTO comments (post_id, author_id, body, created_at)"
+                  " VALUES (?, ?, ?, ?)", pid, me, text, request.now)
+  -> 201 {"comment": K({"id": cid, "post_id": pid, "author_id": me, "body": text,
+                        "created_at": request.now})}
+  Everyone who can see the post may comment on it, its author included.
+
+DELETE /api/comments/{id}                                  function delete_comment
+Checks in this order (the first failing check decides the status):
+  1. cid = path_id(request)                 (a bad or missing id raises 404 itself)
+     row = db.one("SELECT * FROM comments WHERE id = ?", cid)
+     row is None -> 404
+  2. post = visible_post(db, row["post_id"], me)                (404, as above)
+  3. me is neither row["author_id"] (the comment's author) nor post["author_id"] (the post's
+     author) -> 403
+  4. db.run("DELETE FROM comments WHERE id = ?", cid)
+  -> 200 {"deleted": cid}                   (cid is an int)
+  So the post's author may delete any comment on their post, and a comment's author may delete
+  their own comment while they can still see the post (after the post's author unfriends them,
+  step 2 answers 404). Every other comment stays.
+
+A failed check (404, 400 or 403) changes nothing.
+
+Example: users ana (id 1, "Ana Diaz") and ben (id 2, "Ben Ng") are friends, and ben wrote post
+7. As ana, at request.now 1700000005000, POST /api/posts/7/comments {"body": "  great shot "}
+-> 201 {"comment": {"id": 1, "post_id": 7, "author": {"id": 1, "username": "ana",
+"display_name": "Ana Diaz"}, "body": "great shot", "created_at": 1700000005000}}.
+Then as ben, DELETE /api/comments/1 -> 200 {"deleted": 1} (ben wrote the post).
+
+Tables you may write: comments.
+JSON keys, status codes and list order must match exactly; error message texts are not tested.
+"""

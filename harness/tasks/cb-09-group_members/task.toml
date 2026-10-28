@@ -1,0 +1,71 @@
+title = "Group members: add a friend to a group or leave it"
+type = "feat"
+files = [
+  "src/chatbook/features/group_members/handler.py",
+  "docs/api/base.md",
+  "docs/api/social.md",
+  "docs/api/chat.md",
+]
+scope = ["src/chatbook/features/group_members/**"]
+prompt = """
+Implement the feature `group_members` in `src/chatbook/features/group_members/handler.py`.
+The file is a stub: keep its CONTRACT docstring, its two @route lines and the function names
+`add_member_route` and `leave_group`, and replace each `raise HTTPError(501, ...)` with the
+implementation below.
+Reference: docs/api/base.md, docs/api/social.md and docs/api/chat.md (read-only).
+Notation: db = request.db, me = request.me.id.
+Import what you use from chatbook.core.api: add_member, are_friends, body_id,
+conversation_json, member_ids, path_id, remove_member, require_member, require_user (plus the
+HTTPError, Request, Response and route already imported). The route function is called
+add_member_route so that it does not hide the imported helper add_member.
+
+A group is a conversations row with kind "group"; its members are rows of
+members(conversation_id, user_id, joined_at, last_read_id). Any member of a group may add one
+of their own friends to it, and any member may leave it.
+
+POST /api/groups/{id}/members  body {"user_id"}      function add_member_route
+Checks in this order; the first failing check answers:
+  1. cid = path_id(request)                 (a bad id raises 404 itself)
+     conv = require_member(db, cid, me)     (404 if the conversation does not exist or me
+                                             is not a member of it)
+  2. conv["kind"] != "group" -> 400         (a direct conversation)
+  3. uid = body_id(request, "user_id")      (400 itself: missing, a string such as "3", a
+                                             boolean, zero, negative, or a body that is not
+                                             a JSON object)
+  4. require_user(db, uid)                  (404 if there is no such user)
+  5. uid in member_ids(db, cid) -> 409      (already a member, also when uid is not me's
+                                             friend; adding yourself is 409 too)
+  6. not are_friends(db, me, uid) -> 403    (only me's own friends: a pending friend request
+                                             is not a friendship, and being a friend of
+                                             another member is not enough)
+  7. add_member(db, cid, uid, request.now)
+  -> 200 {"conversation": conversation_json(db, cid, me)}
+
+  Keep exactly this order: a request that breaks two checks gets the earlier one. A caller
+  who is not a member gets 404 whatever the body; a direct conversation gets 400 whatever
+  the user_id; there is no separate check for uid == me.
+
+  The answer is built after the add and is the group as me sees it (viewer me, so "unread"
+  is me's own unread count); its "members" list now includes uid, sorted by id.
+  add_member stores joined_at = request.now and last_read_id = the group's last message id,
+  so messages sent before the add are not unread for the new member.
+  A user who left a group is no longer a member: they cannot add anyone (404), and a member
+  may add them back (200).
+
+DELETE /api/groups/{id}/members/me                    function leave_group
+(the path ends with the literal word "me": the caller leaves)
+  1. cid = path_id(request); conv = require_member(db, cid, me)      (404)
+  2. conv["kind"] != "group" -> 400         (a direct conversation cannot be left)
+  3. remove_member(db, cid, me)
+  -> 200 {"left": cid}                      (cid is the int from path_id)
+
+  Only me's members row is deleted. The other members, the conversations row and the
+  messages stay, also when the creator leaves or when the last member leaves. Leaving
+  again is 404 (no longer a member).
+
+Both successes use status 200 (not 201). Every error is raised before anything is written.
+
+Tables you may write: members, only through add_member and remove_member.
+JSON keys, status codes and list order must match exactly; error message texts are not
+tested.
+"""

@@ -1,0 +1,56 @@
+title = "Friends page: friend requests and the friend list"
+type = "feat"
+files = ["src/chatbook/features/page_friends/ui.js", "docs/ui.md"]
+scope = ["src/chatbook/features/page_friends/**"]
+prompt = """
+Implement the page `friends` in `src/chatbook/features/page_friends/ui.js`. The file is a
+stub: keep its CONTRACT comment and its `CB.page('friends', ...)` call with
+`title: 'Friends'`, `nav: 'Friends'` and `order: 20`, and replace the stub body with `load`
+and `render` below.
+Reference: docs/ui.md (read-only).
+
+CB.page('friends', {title: 'Friends', nav: 'Friends', order: 20, load, render})
+load(): req = await CB.api('GET', '/api/friends/requests')
+        fr = await CB.api('GET', '/api/friends');  return {req, friends: fr.friends}
+render(d) -> CB.el('div', {class: 'stack'}, in this order:
+  CB.el('h2', {}, 'Friend requests'),
+  d.req.incoming.length ? d.req.incoming.map(incoming)
+                        : CB.el('p', {class: 'muted'}, 'No requests'),
+  CB.el('h2', {}, 'Sent requests'),
+  d.req.outgoing.length ? d.req.outgoing.map(outgoing)
+                        : CB.el('p', {class: 'muted'}, 'No sent requests'),
+  CB.el('h2', {}, 'Friends (' + d.friends.length + ')'),
+  d.friends.length ? d.friends.map(friend) : CB.el('p', {class: 'muted'}, 'No friends yet'))
+incoming(r) = item: CB.avatar(r.from), CB.userLink(r.from),
+  button testid 'accept-' + r.id 'Accept':
+    await CB.api('POST', '/api/friends/requests/' + r.id + '/accept'); CB.refresh()
+  button testid 'decline-' + r.id 'Decline':
+    await CB.api('POST', '/api/friends/requests/' + r.id + '/decline'); CB.refresh()
+outgoing(r) = item: CB.avatar(r.to), CB.userLink(r.to),
+  button testid 'cancel-' + r.id 'Cancel':
+    await CB.api('DELETE', '/api/friends/requests/' + r.id); CB.refresh()
+friend(f) = item: CB.avatar(f), CB.userLink(f),
+  button testid 'message-' + f.id 'Message':
+    const r = await CB.api('POST', '/api/dm', {user_id: f.id}); CB.go('chat', {id: r.conversation.id})
+  button testid 'unfriend-' + f.id 'Unfriend':
+    await CB.api('DELETE', '/api/friends/' + f.id); CB.refresh()
+("item" = CB.el('div', {class: 'item'}, ...).)
+Server answers: GET /api/friends/requests -> {incoming: [R], outgoing: [R]} with
+R = {id, from: U, to: U, created_at}; GET /api/friends -> {friends: [U]}.
+
+Details:
+- `load` fetches `GET /api/friends/requests` and `GET /api/friends` in that order, returning
+  `{req, friends: fr.friends}`.
+- `render(d)` returns `<div class="stack">` with the three `<h2>` sections in order:
+  `Friend requests`, `Sent requests`, and `Friends (<count>)`.
+- When a section's list is empty, show its `<p class="muted">` placeholder (`No requests`,
+  `No sent requests`, `No friends yet`); otherwise map each entry to `<div class="item">`.
+- Each incoming request row uses `r.from` for `CB.avatar` and `CB.userLink`, and `r.id` for
+  `accept-<id>` and `decline-<id>`. Each outgoing request row uses `r.to` for `CB.avatar`
+  and `CB.userLink`, and `r.id` for `cancel-<id>`. Each friend row uses `f` and `f.id` for
+  `message-<id>` and `unfriend-<id>`.
+- Do not write `try`/`catch`: `CB.api` handles error answers itself.
+
+Texts, headings, testids, button labels, request paths/bodies and element order must match
+exactly; error message texts are not tested.
+"""
