@@ -1,0 +1,8 @@
+# chatbook/ and harness/ are their own git repos, pushed to the branches "chatbook" and
+# "harness" of the same GitHub repo (see README.md). chatbook-oracle/ is a local clone.
+/chatbook/
+/chatbook-oracle/
+/harness/
+.ruff_cache/
+__pycache__/
+*.db
