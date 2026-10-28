@@ -1,4 +1,4 @@
-# Handoff: ChatBook (2026-10-28, all 30 features done, polish P1 in progress, on GitHub as WebChat)
+# Handoff: ChatBook (2026-10-28, all 34 tasks done incl. polish P1, P2 next, on GitHub as WebChat)
 
 This is for whoever continues the project, human or AI, starting with no prior context. Read this file
 first, then `PROGRESS.md` (the step log), then `DESIGN.md` (the blueprint and source of truth).
@@ -19,7 +19,7 @@ A chief (the AI that coordinates):
 Feature code comes **only** from the local LLM, through the harness.
 
 The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS single-page UI. It has
-30 auto-discovered feature folders (the shopapi pattern) built on a protected frame that staff wrote.
+32 auto-discovered feature folders (the shopapi pattern) built on a protected frame that staff wrote.
 
 | Step | State |
 |---|---|
@@ -29,40 +29,39 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
 | 4. Development waves 1-3 (local LLM) | **Done.** 22/22 tasks were written by qwen 14B and accepted. Wave 1 took 26 min, Wave 2 66 min, Wave 3 35 min |
 | 5. Integrate + browser smoke | Done. The MVP reached `chatbook` `main` @ `4ff5b4e`: 645 hidden tests green |
 | 6. Stretch cb-23..cb-30 (Waves 4-5, local LLM) | **Done. All 30 features are on `chatbook` `main` @ `87de89e`.** Wave 4 took 42 min (5/5), Wave 5 27 min (3/3). All gates and 937 hidden tests are green, and the final browser smoke passed. Provenance: all `local-14b-arch`, 0 `oracle` |
-| 7. Next | **Polish wave chosen (2026-10-28)**, in 3 small waves: P1 backend items 10+11 (item 10 = (a) + a new "My activity" page), P2 frame helpers + pages (12, 8, 6/13, 4, 7), P3 paging (1, 2, 9, 14). **P1 in progress (frame done, tasks next):** design `notes/polish-p1-design.md` (approved, open questions answered); staff frame commit `1fbb04a` on `chatbook` `main`; next the harness commit with tasks cb-31..cb-34 and `harness/accepted.txt` (6.4). |
+| 7. Polish P1 (backlog 10(a) + 11, cb-31..cb-34, local LLM) | **Done (2026-10-28).** The owner chose the polish wave in 3 small waves: P1 backend items 10+11 (item 10 = (a) + a new "My activity" page), P2 frame helpers + pages, P3 paging. P1: 4/4 tasks passed on the first try in 18.5 min. Integrate of 32 branches: all gates and 1009 hidden tests green; review 0 findings; browser smoke passed. **`chatbook` `main` @ `b21aa4b`** |
+| 8. Next | **Design P2** (frame helpers + pages: items 12, 8, 6/13, 4, 7), then P3 paging (1, 2, 9, 14). See 6.4 |
 
 **State at handoff (verified):**
-- `chatbook`: `main` @ `1fbb04a`, the P1 frame commit ("P1 frame: can_see_post, own like/comment
-  removable after unfriend, one 404, activity stubs"; parent `87de89e`, the end of the stretch).
-  Clean, one worktree. **Not pushed:** `main` is 1 ahead of `origin/chatbook`. All gates are
+- `chatbook`: `main` @ `b21aa4b`, fast-forwarded from `integration/20261028-221919` (the P1
+  merge; before it `1fbb04a`, the P1 frame commit). Clean, one worktree. **Not pushed:** `main`
+  is 9 ahead of `origin/chatbook` (the frame commit, 4 worker commits, 4 merges). All gates are
   green, with 291 frame tests.
-  - Until P1 merges, `main` has two stubs (`activity` answers 501, and the page `activity` shows
-    "Coming soon" under nav "Activity"). The CONTRACT blocks of `likes` and `comments` are ahead
-    of their code. The product still works.
-  - 30 accepted `agent/*--local-14b-arch--*` branches. Keep them all. From the P1 harness commit
-    on, the regression list is `harness/accepted.txt` (all 30 active until P1 merges; then
-    cb-24/cb-25 retire only if cb-31/cb-32 replaced them). Retired branches stay as records.
-  - 6 old `integration/2026*` branches. They can be deleted.
-- `chatbook-oracle`: `main` @ `1fbb04a`, clean, only `main`. It is current.
-- `harness`: `main` @ `2ecb8e5`, clean, with tasks cb-01..cb-30. The P1 tasks cb-31..cb-34 and
-  `accepted.txt` come next (6.4).
-- This folder: the P1 docs commit ("Polish P1: design, decisions and docs for cb-31..cb-34") is
-  local, not pushed.
+  - 34 accepted `agent/*--local-14b-arch--*` branches. Keep them all. The regression list is
+    `harness/accepted.txt`: 32 active, plus 2 retired (cb-24-likes and cb-25-comments, superseded
+    by cb-31 and cb-32). Retired branches stay as records.
+  - 7 `integration/2026*` branches (the newest is the P1 merge). They can be deleted.
+- `chatbook-oracle`: `main` @ `b21aa4b`, clean, only `main`. It is current.
+- `harness`: `main` @ `80cc90e`, clean, with tasks cb-01..cb-34 and `accepted.txt`. **Not
+  pushed:** 2 ahead of `origin/harness` (`13c35a4` the P1 tasks + `accepted.txt`, `80cc90e` the
+  P1 branches added and cb-24/cb-25 retired).
+- This folder: the P1 docs commits are local, not pushed.
 - **GitHub:** everything up to the end of the stretch is pushed to
-  https://github.com/ViewAJirapat/WebChat. The P1 commits are not pushed yet (push only when the
-  owner asks, 6.0). Each local repo's `main` pushes to its own working branch:
+  https://github.com/ViewAJirapat/WebChat. The P1 commits and the 4 P1 branches are not pushed
+  yet (push only when the owner asks, 6.0). Each local repo's `main` pushes to its own working
+  branch:
 
   | Remote branch | Local repo | Contents |
   |---|---|---|
   | `project` | `05_ChatBook/` | README, this file, PROGRESS, DESIGN, `notes/`, `tools/publish-main.sh` |
-  | `chatbook` + the 30 `agent/*` | `chatbook/` | the app |
+  | `chatbook` + the accepted `agent/*` (30 so far) | `chatbook/` | the app |
   | `harness` | `harness/` | `swarm.toml` and the tasks |
   | `main` (default) | none | **Generated.** The whole project in one tree: `project` at the root, `chatbook` in `chatbook/`, `harness` in `harness/`, merged with full history by `tools/publish-main.sh`. It is for browsing and download; never commit to it, work in a clone of it or pull it into a local repo (see the warning in 6.0) |
 
   The old `integration/*` branches and `harness/runs/` (the logs, which are git-ignored) were not
   pushed. `chatbook-oracle/` is a local clone and is never pushed.
 - Ollama was started from the chief's session and stops when that session ends. Restart it as shown in 6.1.
-- **Don't validate old tasks on the oracle:** the oracle's `main` already contains their features, so their baseline check fails by design. Validate only new or reopened tasks (now cb-31..cb-34), and never again after they are accepted.
+- **Don't validate old tasks on the oracle:** the oracle's `main` already contains their features, so their baseline check fails by design. Validate only new or reopened tasks, and never again after they are accepted. All of cb-01..cb-34 are accepted now, so none of them is validated again.
 
 **What the product does** (browser-checked):
 - **MVP:** register and login, people search, friend requests (accept or decline), friends list, DMs
@@ -72,6 +71,9 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
   delete) and deleting your own posts; a post page; and a Discover page with friends online in the
   last 60 s ("Message" opens the DM) and "People you may know" with mutual-friend counts and
   "Add friend".
+- **Polish P1:** after an unfriend, you can still remove your own like and delete your own
+  comment on the ex-friend's post. "My activity" (nav "Activity") lists them with Unlike and
+  Delete buttons. A hidden and a missing comment give the same 404.
 
 Try it in PowerShell (it serves on http://127.0.0.1:8000; the `PORT`, `HOST` and `CHATBOOK_DB`
 env vars change that). The package lives in `src/`, so `PYTHONPATH` must point there:
@@ -172,8 +174,8 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
   - §8 the failure ladder.
 - `PROGRESS.md`: the step log.
 - `notes/polish-backlog.md`: spec, frame and tooling gaps found by the reviews.
-- `notes/polish-p1-design.md`: the approved P1 design (decisions, every hidden test, prompts, and
-  the runbook in G.4).
+- `notes/polish-p1-design.md`: the P1 design (decisions, every hidden test, prompts, and the
+  runbook in G.4). P1 is done; this file is the model for the P2 design.
 - `notes/frame-writer-reports.md`: the frame writers' choices.
 - `chatbook/`: the product repo.
   - Feature code is in `src/chatbook/features/<name>/handler.py` or `ui.js`.
@@ -181,11 +183,11 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 - `chatbook-oracle/`: a throwaway validation clone.
 - `harness/`:
   - `swarm.toml`;
-  - `tasks/cb-01..cb-30/`, each with `task.toml`, `acceptance/test_cbNN_<name>.py` and `solution.patch`
-    (cb-31..cb-34 come with the P1 harness commit);
-  - `accepted.txt` (from the P1 harness commit): the regression list, one accepted branch per
-    line, and a `# retired:` block for branches whose replacement was accepted;
-  - `runs/`, which is git-ignored and holds the per-attempt logs, `wave*.log` and `cb05-rerun.log`.
+  - `tasks/cb-01..cb-34/`, each with `task.toml`, `acceptance/test_cbNN_<name>.py` and `solution.patch`;
+  - `accepted.txt`: the regression list, one accepted branch per line (32 now), and a
+    `# retired:` block for branches whose replacement was accepted (cb-24, cb-25);
+  - `runs/`, which is git-ignored and holds the per-attempt logs, `wave*.log`, `cb05-rerun.log`
+    and `p1*.log`.
 
 **Health check.** Run these from `chatbook`, where:
 - `py` = `E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe`;
@@ -203,10 +205,11 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 ## 5. Open Issues
 1. **Polish backlog:** 14 items, see `notes/polish-backlog.md`. All of them are spec or frame debt:
    the worker followed its CONTRACT every time. No security hole was found; the pages escape all
-   HTML. The biggest are:
-   - **(10, medium, privacy)** after an unfriend, a user can't delete their own comment or like on the ex-friend's post. The owner decided (a) plus a "My activity" page; it is in P1 (cb-31..cb-34) together with item 11, in progress (6.4);
+   HTML. **Items 10 (medium, privacy) and 11 are done in P1** (cb-31..cb-34, `chatbook`
+   `b21aa4b`). Of the 12 left, the biggest are:
    - (1, 2, 9) "Show older" / "Show more" re-mount the page, which loses the draft, and fail past the API's limit cap;
-   - (12) one-click Delete with no confirm.
+   - (12) one-click Delete with no confirm (now also on the Activity page);
+   - (8) buttons stay enabled while busy; a post page left open after an unfriend toasts "post not found" and stays stale (known P1 behaviour).
 2. **Frame tooling notes:**
    - restore skips a file that keeps only the stub's first line;
    - a check_extra comment gives the wrong reason for `backslashreplace`;
@@ -251,10 +254,9 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
    git clone --single-branch -b harness https://github.com/ViewAJirapat/WebChat.git harness
    ```
 3. **Make the clones work like the originals.** The harness's base branch is `main`, and an
-   integrate needs the branches listed in `harness/accepted.txt` as local branches (until the P1
-   harness commit adds that file: the 30 accepted ones). The fetch of `refs/heads/agent/*` below
-   also brings the retired branches. They stay as records (they are ancestors of `main`). In
-   `chatbook`:
+   integrate needs the branches listed in `harness/accepted.txt` as local branches. The fetch of
+   `refs/heads/agent/*` below also brings the retired branches. They stay as records (they are
+   ancestors of `main`). In `chatbook`:
    ```
    git -C chatbook branch -m chatbook main
    git -C chatbook config remote.origin.push refs/heads/main:refs/heads/chatbook
@@ -294,9 +296,10 @@ git -C E:/Playground_Projects/05_ChatBook push                      # docs  -> p
 git -C E:/Playground_Projects/05_ChatBook/chatbook push             # app   -> chatbook
 git -C E:/Playground_Projects/05_ChatBook/harness push              # tasks -> harness
 ```
-Push each newly accepted agent branch by its full name, for example:
+Push each newly accepted agent branch by its full name (the next push has the 4 P1 branches,
+listed in 6.4), for example:
 ```
-git -C E:/Playground_Projects/05_ChatBook/chatbook push origin agent/cb-31-name--local-14b-arch--20261101-120000-abcd
+git -C E:/Playground_Projects/05_ChatBook/chatbook push origin agent/cb-31-likes--local-14b-arch--20261028-220013-d8d2
 ```
 Then update `main`. From Git Bash:
 ```bash
@@ -331,7 +334,7 @@ Invoke-RestMethod http://127.0.0.1:11434/api/ps    # size_vram should be ~9.5 GB
 
 ### 6.2 Pick the next phase (ask the owner)
 The stretch features (option (b) below) are **done**. What's left is (a), or new features designed the same way.
-**The owner chose (a) on 2026-10-28**, in 3 waves (section 1). P1 is in progress (6.4).
+**The owner chose (a) on 2026-10-28**, in 3 waves (section 1). P1 is done; P2 is next (6.4).
 
 **(a) Polish wave.** Take the items in `notes/polish-backlog.md`. For each one:
 1. Staff change the frame, or the stub CONTRACT and the DESIGN §6.5 spec.
@@ -387,30 +390,37 @@ suggestions, page_feed, page_post and page_discover.
 9. In `harness/accepted.txt`, add the merged branches and move each replaced old branch to the
    retired block; commit the harness. Update `PROGRESS.md`.
 
-### 6.4 Polish P1: where it stands and what's next
-The runbook is `notes/polish-p1-design.md` G.4, and the specs are in DESIGN 6.5 ("Polish P1").
+### 6.4 Polish P1: done. Next: design P2
+**P1 is done (2026-10-28).** The runbook was `notes/polish-p1-design.md` G.4, the specs are in
+DESIGN 6.5 ("Polish P1"), and PROGRESS has the full record.
+- Worker (`local-14b-arch`): 4/4 passed in 1 iteration each, 18.5 min in total; architect input
+  4.8-5.1k tokens. Logs: `harness/runs/p1-cb31.log`, `p1.log`, `p1-integrate.log`.
+- Integrate `integration/20261028-221919`: the 28 kept branches + the 4 P1 branches = 32
+  merged. All gates and 1009 hidden tests are green. Provenance: 4 new commits, all
+  `local-14b-arch`, only the 4 feature files.
+- Code review `wf_c88636e8-22e`: 0 findings. The browser smoke (DESIGN 7.3 + design G.5)
+  passed. The stale post-page case was not re-run; it goes to P2 (backlog item 8).
+- `chatbook` `main` @ `b21aa4b`; harness `80cc90e` (`accepted.txt`); oracle @ `b21aa4b`.
+- The 4 P1 branches (kept, to push with the next push):
+  `agent/cb-31-likes--local-14b-arch--20261028-220013-d8d2`,
+  `agent/cb-32-comments--local-14b-arch--20261028-220428-077a`,
+  `agent/cb-33-activity--local-14b-arch--20261028-220843-27db`,
+  `agent/cb-34-page_activity--local-14b-arch--20261028-221245-fb33`.
 
-**Done:**
-- The design is approved and its open questions are answered.
-- The staff frame commit `1fbb04a` is on `chatbook` `main` (G.4 step 3). It passes the gates
-  with 291 frame tests.
-- This folder's docs commit (step 2).
+**Next step: design P2**, the same way as P1 (`notes/polish-p1-design.md` is the model).
+1. A design workflow writes `notes/polish-p2-design.md` for the backlog items:
+   - 12: confirm before delete, including the Activity page's Delete and Unlike buttons;
+   - 8: busy buttons / a `CB.action` helper, including the stale post-page notes from P1;
+   - 6 and 13: pre-wrap text for bios, posts and comments;
+   - 4: stale badge after logout;
+   - 7: polling after a failed first load.
 
-**Next:**
-1. Harness commit (step 4): the 4 task folders cb-31..cb-34, each `solution.patch` made in a
-   scratch worktree of the new `main`, plus `harness/accepted.txt` with all 30 branches active.
-   The old task folders are not touched.
-2. Oracle (step 5): `clean --branches` (the clone is already at `1fbb04a`), then `validate cb-31
-   cb-32 cb-33 cb-34 -j 2` and `integrate`. Then, by hand against that integration tree, run the
-   30 old suites: exactly the 2 known cases must fail (design F.1). Then the mutant review.
-3. Ollama on the GPU (6.1).
-4. `swarm -t chatbook run cb-31 -j 1` alone. Read its diff, iterations and token counts. Then
-   `run cb-32 cb-33 cb-34 -j 1`, logged to `harness/runs/p1.log`.
-5. Integrate from `accepted.txt` (DESIGN 7.2 step 4):
-   - leave out cb-24 only if cb-31 passed, and cb-25 only if cb-32 passed;
-   - include cb-34 only together with cb-31, cb-32 and cb-33;
-   - expect `integration OK: 32 branch(es) merged` when all 4 pass.
-6. Provenance, code review, and the browser smoke with the P1 steps (DESIGN 7.3).
-7. `merge --ff-only`, then `swarm -t chatbook clean`. In `accepted.txt`, add the P1 branches and
-   retire cb-24/cb-25 only where they were replaced; commit the harness. Update PROGRESS. Push
-   only when the owner asks.
+   Items 3 and 5 are low and optional. The owner approves the design and answers its open
+   questions. New task numbers start at cb-35.
+2. Then the P1 steps: staff frame commit on `chatbook` `main`, this folder's docs, the harness
+   commit (tasks + `accepted.txt`), validate on the oracle, worker runs, integrate from
+   `accepted.txt` (6.3), provenance, code review, browser smoke, merge, update `accepted.txt`.
+3. After P2: P3 paging (items 1, 2, 9, 14).
+
+Nothing is pushed yet. Push only when the owner asks, then publish `main` with
+`tools/publish-main.sh` (6.0).

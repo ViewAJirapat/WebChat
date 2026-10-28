@@ -2767,6 +2767,9 @@ P1 also fixes item 11. The full design is `notes/polish-p1-design.md`: decisions
 the old-test conflicts, every hidden test, the cb-31 prompt in full and the runbook (its G.4).
 Its open questions are answered. This section is the spec summary.
 
+**Status: done (2026-10-28).** cb-31..cb-34 passed 4/4 on the first try and merged together as
+`chatbook` `main` @ `b21aa4b` (PROGRESS.md).
+
 **Frame commit (done):** `chatbook` `main` @ `1fbb04a` (parent `87de89e`), "P1 frame:
 can_see_post, own like/comment removable after unfriend, one 404, activity stubs". It adds
 `can_see_post` (3.5, 3.10, 3.18, 3.19), the two new stubs, the route and page rows (3.17, 1.3),
@@ -3115,9 +3118,9 @@ cb-31..cb-34 again after acceptance: their baseline then fails by design.
   The refresh then gets 404, so one "post not found" toast shows and the stale page stays.
 - Delete on a comment that is already gone (a double click, or a comment the post's author
   deleted while my page was open) toasts "post not found".
-- Between the frame commit and the merge, `main` shows an "Activity" nav entry with "Coming
-  soon" (`/api/activity/hidden` answers 501), and two CONTRACT blocks ahead of their code. The
-  product still works.
+- Between the frame commit and the merge, `main` showed an "Activity" nav entry with "Coming
+  soon" (`/api/activity/hidden` answered 501), and two CONTRACT blocks ahead of their code. The
+  product still worked. This ended with the merge (`b21aa4b`).
 
 ---
 
@@ -3159,7 +3162,7 @@ cb-31..cb-34 again after acceptance: their baseline then fails by design.
 2. **Run**: `swarm -t chatbook run <wave ids> -j 1` (engine default `local-14b-arch`; one GPU).
 3. **Triage** failures with the ladder in 8.1; rerun as needed.
 4. **Integrate explicitly** from the regression list `harness/accepted.txt` (since P1; it
-   arrives with the P1 harness commit. Waves 1-5 listed `git -C chatbook branch --list
+   came with the P1 harness commit `13c35a4`. Waves 1-5 listed `git -C chatbook branch --list
    "agent/*--local-*"`, which would now also list retired branches):
    ```
    $keep = Get-Content E:/Playground_Projects/05_ChatBook/harness/accepted.txt |

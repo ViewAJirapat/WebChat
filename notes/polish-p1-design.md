@@ -1,5 +1,8 @@
 # Polish wave P1: final design (backlog items 10(a) and 11, plus "My activity")
 
+**Status: done 2026-10-28.** cb-31..cb-34 passed 4/4 on the first try and merged as `chatbook`
+`main` @ `b21aa4b`. The rest of this file is the design as written before the work.
+
 Date: 2026-10-28. Status: design only. Nothing was changed in `chatbook`, `harness` or
 `04_AgentSwarm`. No swarm command was run.
 
