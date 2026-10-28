@@ -29,11 +29,15 @@ agent/cb-20-page_group--local-14b-arch--20261027-210816-a745
 agent/cb-21-page_profile--local-14b-arch--20261027-211301-3fd4
 agent/cb-22-badges--local-14b-arch--20261027-211746-5878
 agent/cb-23-posts--local-14b-arch--20261028-012459-5205
-agent/cb-24-likes--local-14b-arch--20261028-014937-36e3
-agent/cb-25-comments--local-14b-arch--20261028-015647-cfda
 agent/cb-26-presence--local-14b-arch--20261028-020117-c2b5
 agent/cb-27-suggestions--local-14b-arch--20261028-020402-59e4
 agent/cb-28-page_feed--local-14b-arch--20261028-020737-5136
 agent/cb-29-page_post--local-14b-arch--20261028-022141-0d74
 agent/cb-30-page_discover--local-14b-arch--20261028-022831-703c
+agent/cb-31-likes--local-14b-arch--20261028-220013-d8d2
+agent/cb-32-comments--local-14b-arch--20261028-220428-077a
+agent/cb-33-activity--local-14b-arch--20261028-220843-27db
+agent/cb-34-page_activity--local-14b-arch--20261028-221245-fb33
 # retired:
+# agent/cb-24-likes--local-14b-arch--20261028-014937-36e3     superseded by cb-31-likes (P1, 2026-10-28)
+# agent/cb-25-comments--local-14b-arch--20261028-015647-cfda  superseded by cb-32-comments (P1, 2026-10-28)
