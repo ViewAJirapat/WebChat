@@ -1,6 +1,7 @@
-# chatbook/ and harness/ are their own git repos (GitHub branches "chatbook" and "harness"); this
-# folder's repo is branch "project". GitHub "main" merges all three: tools/publish-main.sh.
-# chatbook-oracle/ is a local clone.
+# In this folder's own repo (GitHub branch "project"), chatbook/ and harness/ are separate git repos
+# (branches "chatbook" and "harness") and chatbook-oracle/ is a local clone. GitHub "main" is generated
+# by tools/publish-main.sh; there these rules hide new files under chatbook/ and harness/, which is
+# fine because nobody works in a clone of main.
 /chatbook/
 /chatbook-oracle/
 /harness/

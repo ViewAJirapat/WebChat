@@ -2,7 +2,7 @@
 
 **ChatBook**, a small Facebook-like chat web app, was built feature by feature by a **local LLM**
 (qwen2.5-coder 14B through Aider, on a GTX 1080 Ti). It was built with the agent swarm harness
-[Glubokaya-Op](https://github.com/ViewAJirapat/Glubokaya-Op). Claude acted as chief: it planned the
+Glubokaya-Op (a private repo). Claude acted as chief: it planned the
 work, staff agents wrote the frame, specs and hidden tests, and the local model wrote all 30
 features. Every feature passed hidden acceptance tests it never saw (937 in total).
 
@@ -19,11 +19,11 @@ What the app does:
 
 | Path | What it is |
 |---|---|
-| [`chatbook/`](chatbook/) | **The web app**: the stdlib Python JSON API, sqlite and the plain-JS UI. The features the local LLM wrote are in [`chatbook/src/chatbook/features/`](chatbook/src/chatbook/features/) |
-| [`harness/`](harness/) | `swarm.toml` and `tasks/cb-01..cb-30`: each task's spec, hidden tests and reference patch |
+| [`chatbook/`](https://github.com/ViewAJirapat/WebChat/tree/main/chatbook) | **The web app**: the stdlib Python JSON API, sqlite and the plain-JS UI. The features the local LLM wrote are in [`chatbook/src/chatbook/features/`](https://github.com/ViewAJirapat/WebChat/tree/main/chatbook/src/chatbook/features) |
+| [`harness/`](https://github.com/ViewAJirapat/WebChat/tree/main/harness) | `swarm.toml` and `tasks/cb-01..cb-30`: each task's spec, hidden tests and reference patch |
 | [HANDOFF.md](HANDOFF.md) | Start here to continue the work |
 | [PROGRESS.md](PROGRESS.md), [DESIGN.md](DESIGN.md), `notes/` | The step log, the blueprint, the review backlog |
-| `tools/publish-main.sh` | Rebuilds `main` from the working branches |
+| `tools/publish-main.sh` | Updates `main` from the working branches |
 
 ## Run the app
 
@@ -50,3 +50,4 @@ and `tools/publish-main.sh` merges them into `main` with their full history:
 They stay separate because the local model works in a checkout of the `chatbook` repo. That
 checkout must never contain the hidden tests, and the harness needs the app as a repo of its own.
 To develop, clone the three branches as shown in [HANDOFF.md](HANDOFF.md) section 6.0, not `main`.
+Never run `git pull origin main` in a local repo: `main` would bring `chatbook/` and `harness/` into it.

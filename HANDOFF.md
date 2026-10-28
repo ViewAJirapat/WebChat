@@ -27,7 +27,7 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
 | 2. Frame, harness config, frame review, tasks cb-01..cb-22 | Done. The frame is frozen, except for the CONTRACT gate added in Wave 1 |
 | 3. Validate on the oracle + reference integrate | Done: 22/22 |
 | 4. Development waves 1-3 (local LLM) | **Done.** 22/22 tasks were written by qwen 14B and accepted. Wave 1 took 26 min, Wave 2 66 min, Wave 3 35 min |
-| 5. Integrate + browser smoke | Done. The MVP reached `main` @ `4ff5b4e`: 645 hidden tests green |
+| 5. Integrate + browser smoke | Done. The MVP reached `chatbook` `main` @ `4ff5b4e`: 645 hidden tests green |
 | 6. Stretch cb-23..cb-30 (Waves 4-5, local LLM) | **Done. All 30 features are on `chatbook` `main` @ `87de89e`.** Wave 4 took 42 min (5/5), Wave 5 27 min (3/3). All gates and 937 hidden tests are green, and the final browser smoke passed. Provenance: all `local-14b-arch`, 0 `oracle` |
 | 7. Next | **Owner's choice:** a polish wave from `notes/polish-backlog.md` (14 items; item 10 is medium, about privacy), or new features |
 
@@ -45,12 +45,12 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
   | `project` | `05_ChatBook/` | README, this file, PROGRESS, DESIGN, `notes/`, `tools/publish-main.sh` |
   | `chatbook` + the 30 `agent/*` | `chatbook/` | the app |
   | `harness` | `harness/` | `swarm.toml` and the tasks |
-  | `main` (default) | none | **Generated.** The whole project in one tree: `project` at the root, `chatbook` in `chatbook/`, `harness` in `harness/`, merged with full history by `tools/publish-main.sh`. It is for browsing and download; never commit to it or work in a clone of it |
+  | `main` (default) | none | **Generated.** The whole project in one tree: `project` at the root, `chatbook` in `chatbook/`, `harness` in `harness/`, merged with full history by `tools/publish-main.sh`. It is for browsing and download; never commit to it, work in a clone of it or pull it into a local repo (see the warning in 6.0) |
 
   The old `integration/*` branches and `harness/runs/` (the logs, which are git-ignored) were not
   pushed. `chatbook-oracle/` is a local clone and is never pushed.
 - Ollama was started from the chief's session and stops when that session ends. Restart it as shown in 6.1.
-- **Don't validate old tasks on the oracle:** `main` already contains their features, so their baseline check fails by design. Validate only new tasks (or re-opened ones whose stub was reset).
+- **Don't validate old tasks on the oracle:** the oracle's `main` already contains their features, so their baseline check fails by design. Validate only new tasks (or re-opened ones whose stub was reset).
 
 **What the product does** (browser-checked):
 - **MVP:** register and login, people search, friend requests (accept or decline), friends list, DMs
@@ -61,9 +61,11 @@ The product is a stdlib-only Python WSGI JSON API with sqlite and a plain-JS sin
   last 60 s ("Message" opens the DM) and "People you may know" with mutual-friend counts and
   "Add friend".
 
-Try it (it serves on http://127.0.0.1:8000; the `PORT`, `HOST` and `CHATBOOK_DB` env vars change that):
-```
+Try it in PowerShell (it serves on http://127.0.0.1:8000; the `PORT`, `HOST` and `CHATBOOK_DB`
+env vars change that). The package lives in `src/`, so `PYTHONPATH` must point there:
+```powershell
 cd E:\Playground_Projects\05_ChatBook\chatbook
+$env:PYTHONPATH = "src"
 E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 ```
 `--demo` seeds demo users into an empty database and prints their logins.
@@ -140,7 +142,7 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
 
 ## 4. Key Artifacts (all under `E:\Playground_Projects\05_ChatBook`)
 - `README.md`: the GitHub front page, which explains the branch layout.
-- `tools/publish-main.sh`: rebuilds GitHub `main` from the three working branches.
+- `tools/publish-main.sh`: updates GitHub `main` from the three working branches (see 6.0).
 - `DESIGN.md`:
   - §3 the frame API;
   - §4 `swarm.toml`;
@@ -160,7 +162,10 @@ E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe -m chatbook --demo
   - `tasks/cb-01..cb-30/`, each with `task.toml`, `acceptance/test_cbNN_<name>.py` and `solution.patch`;
   - `runs/`, which is git-ignored and holds the per-attempt logs, `wave*.log` and `cb05-rerun.log`.
 
-**Health check.** Run these from `chatbook`, where `py` = `E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe`:
+**Health check.** Run these from `chatbook`, where:
+- `py` = `E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/python.exe`;
+- `swarm` = `E:/Playground_Projects/04_AgentSwarm/.venv/Scripts/swarm.exe -c E:/Playground_Projects/05_ChatBook/harness/swarm.toml`.
+  Without `-c`, swarm loads 04_AgentSwarm's own config, which has no `chatbook` target.
 - `py -m ruff check .`
 - `py -m ruff format --check .`
 - `py -m mypy src`
@@ -239,11 +244,20 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
    ```
    git clone chatbook chatbook-oracle
    ```
-4. **Check it:** run the health check in section 4 (290 frame tests), then
-   `swarm -t chatbook archlint`.
+4. **Check it:** run the health check in section 4 (290 frame tests, then archlint).
 5. **On a non-Pascal GPU** (e.g. an RTX 40xx), Ollama's default CUDA library works. The
    `OLLAMA_LLM_LIBRARY=cuda_v12` in 6.1 is only for the 1080 Ti. The token limits in section 3
    were measured on the 1080 Ti with 8k context; keep them unless you re-measure.
+
+> **Never pull, merge or check out GitHub `main` in any of the three local repos.** Use plain
+> `git pull` and `git push`: they follow `project`, `chatbook` and `harness`. Also don't use the
+> GitHub quick-start `git push -u origin main`. `main` contains `chatbook/` and `harness/`, so
+> `git pull origin main`:
+> - in the root folder overwrites the nested repos' working files, and uncommitted work there is lost;
+> - in `chatbook` puts the hidden tests into the app repo, where the worker would see them.
+>
+> No git setting can block this, so it is a rule. Before pushing `chatbook`, check that
+> `git -C chatbook ls-files harness` prints nothing.
 
 **Push updates** (only when the owner asks). Each repo pushes to its own branch; then refresh
 `main`:
@@ -251,13 +265,27 @@ the commands in this file use `E:/Playground_Projects/...`. If the paths differ,
 git -C E:/Playground_Projects/05_ChatBook push                      # docs  -> project
 git -C E:/Playground_Projects/05_ChatBook/chatbook push             # app   -> chatbook
 git -C E:/Playground_Projects/05_ChatBook/harness push              # tasks -> harness
-git -C E:/Playground_Projects/05_ChatBook/chatbook push origin <newly accepted agent/... branch>
-bash E:/Playground_Projects/05_ChatBook/tools/publish-main.sh      # merge all three into main
 ```
-On the original PC these remotes and push settings are already in place. Push new `agent/*`
-branches by name and only accepted ones; rejected attempts stay local. The publish script works in
-a throwaway clone, so it never touches the local repos. It only merges, and it pushes nothing when
-`main` is already current.
+Push each newly accepted agent branch by its full name, for example:
+```
+git -C E:/Playground_Projects/05_ChatBook/chatbook push origin agent/cb-31-name--local-14b-arch--20261101-120000-abcd
+```
+Then update `main`. From Git Bash:
+```bash
+bash E:/Playground_Projects/05_ChatBook/tools/publish-main.sh
+```
+From PowerShell, call Git's bash. Plain `bash` there starts WSL, which can't see `E:/`:
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" E:/Playground_Projects/05_ChatBook/tools/publish-main.sh
+```
+On the original PC these remotes and push settings are already in place. Push only accepted
+`agent/*` branches; rejected attempts stay local.
+
+The publish script builds `main`'s tree straight from the three branch tips, so `main` always
+matches them exactly. That holds even after a branch was rewritten or someone committed to
+`main`. Each new tip becomes a merge parent, so `main`'s history keeps every commit. The script
+works in a throwaway clone, never touches the local repos and never force-pushes. It pushes
+nothing when `main` is already current.
 
 ### 6.1 Start Ollama on the GPU (outside the sandbox)
 ```powershell
